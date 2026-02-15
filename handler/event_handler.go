@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -11,12 +12,20 @@ import (
 	"rocket-tickets/repository"
 )
 
-func GetEvents(c *gin.Context) {
-	var db, _ = repository.GetEvents()
+type EventHandler struct {
+	repo repository.EventStore
+}
+
+func NewEventHandler(repo repository.EventStore) *EventHandler {
+	return &EventHandler{repo: repo}
+}
+
+func (h *EventHandler) GetEvents(c *gin.Context) {
+	var db, _ = h.repo.GetEvents()
 	c.IndentedJSON(http.StatusOK, db)
 }
 
-func PostEvent(c *gin.Context) {
+func (h *EventHandler) PostEvent(c *gin.Context) {
 	var event model.Event
 
 	if err := c.ShouldBindJSON(&event); err != nil {
@@ -28,11 +37,11 @@ func PostEvent(c *gin.Context) {
 		event.Tickets = &[]model.TicketsCategory{}
 	}
 
-	repository.AddEvent(&event)
+	h.repo.AddEvent(&event)
 	c.IndentedJSON(http.StatusCreated, event)
 }
 
-func DeleteEvent(c *gin.Context) {
+func (h *EventHandler) DeleteEvent(c *gin.Context) {
 	idStr := c.Param("id")
 	idUint64, err := strconv.ParseUint(idStr, 10, 32)
 	if err != nil {
@@ -41,8 +50,8 @@ func DeleteEvent(c *gin.Context) {
 	}
 	id := uint(idUint64)
 
-	if err := repository.DeleteEvent(id); err != nil {
-		if err == repository.ErrEventNotFound {
+	if err := h.repo.DeleteEvent(id); err != nil {
+		if errors.Is(err, repository.ErrEventNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 			return
 		}

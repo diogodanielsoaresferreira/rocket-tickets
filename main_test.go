@@ -13,11 +13,12 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
+	"rocket-tickets/handler"
 	"rocket-tickets/model"
 	"rocket-tickets/repository"
 )
 
-func setupTestDB(t *testing.T) {
+func setupTestRepository(t *testing.T) repository.EventStore {
 	t.Helper()
 
 	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
@@ -29,7 +30,7 @@ func setupTestDB(t *testing.T) {
 		t.Fatalf("failed to migrate test database: %v", err)
 	}
 
-	repository.DB = db
+	return repository.NewGormEventRepository(db)
 }
 
 func performRequest(r http.Handler, method, path string, body []byte) *httptest.ResponseRecorder {
@@ -42,9 +43,10 @@ func performRequest(r http.Handler, method, path string, body []byte) *httptest.
 }
 
 func TestPostGetAndDeleteEventFlow(t *testing.T) {
-	setupTestDB(t)
+	eventRepository := setupTestRepository(t)
 	gin.SetMode(gin.TestMode)
-	r := setupRouter()
+	eventHandler := handler.NewEventHandler(eventRepository)
+	r := setupRouter(eventHandler)
 
 	payload := map[string]any{
 		"title":  "Summer Fest",
@@ -127,9 +129,10 @@ func TestPostGetAndDeleteEventFlow(t *testing.T) {
 }
 
 func TestPostEventWithoutTicketsDefaultsToEmptySlice(t *testing.T) {
-	setupTestDB(t)
+	eventRepository := setupTestRepository(t)
 	gin.SetMode(gin.TestMode)
-	r := setupRouter()
+	eventHandler := handler.NewEventHandler(eventRepository)
+	r := setupRouter(eventHandler)
 
 	payload := map[string]any{
 		"title":  "Acoustic Night",
@@ -162,9 +165,10 @@ func TestPostEventWithoutTicketsDefaultsToEmptySlice(t *testing.T) {
 }
 
 func TestPostEventInvalidPayload(t *testing.T) {
-	setupTestDB(t)
+	eventRepository := setupTestRepository(t)
 	gin.SetMode(gin.TestMode)
-	r := setupRouter()
+	eventHandler := handler.NewEventHandler(eventRepository)
+	r := setupRouter(eventHandler)
 
 	payload := []byte(`{"title":"Missing required fields"}`)
 	resp := performRequest(r, http.MethodPost, "/event", payload)
@@ -175,9 +179,10 @@ func TestPostEventInvalidPayload(t *testing.T) {
 }
 
 func TestDeleteEventInvalidID(t *testing.T) {
-	setupTestDB(t)
+	eventRepository := setupTestRepository(t)
 	gin.SetMode(gin.TestMode)
-	r := setupRouter()
+	eventHandler := handler.NewEventHandler(eventRepository)
+	r := setupRouter(eventHandler)
 
 	resp := performRequest(r, http.MethodDelete, "/event/not-a-number", nil)
 
@@ -187,9 +192,10 @@ func TestDeleteEventInvalidID(t *testing.T) {
 }
 
 func TestDeleteEventNotFound(t *testing.T) {
-	setupTestDB(t)
+	eventRepository := setupTestRepository(t)
 	gin.SetMode(gin.TestMode)
-	r := setupRouter()
+	eventHandler := handler.NewEventHandler(eventRepository)
+	r := setupRouter(eventHandler)
 
 	resp := performRequest(r, http.MethodDelete, "/event/99999", nil)
 
@@ -199,9 +205,10 @@ func TestDeleteEventNotFound(t *testing.T) {
 }
 
 func TestPostEventRejectsTicketPriceAndQuantityNotGreaterThanZero(t *testing.T) {
-	setupTestDB(t)
+	eventRepository := setupTestRepository(t)
 	gin.SetMode(gin.TestMode)
-	r := setupRouter()
+	eventHandler := handler.NewEventHandler(eventRepository)
+	r := setupRouter(eventHandler)
 
 	payload := map[string]any{
 		"title":  "Invalid Pricing Event",
@@ -230,9 +237,10 @@ func TestPostEventRejectsTicketPriceAndQuantityNotGreaterThanZero(t *testing.T) 
 }
 
 func TestPostEventRejectsAvailableGreaterThanQuantity(t *testing.T) {
-	setupTestDB(t)
+	eventRepository := setupTestRepository(t)
 	gin.SetMode(gin.TestMode)
-	r := setupRouter()
+	eventHandler := handler.NewEventHandler(eventRepository)
+	r := setupRouter(eventHandler)
 
 	payload := map[string]any{
 		"title":  "Invalid Availability Event",

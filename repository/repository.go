@@ -10,8 +10,21 @@ import (
 	"rocket-tickets/model"
 )
 
-var DB *gorm.DB
 var ErrEventNotFound = errors.New("event not found")
+
+type EventStore interface {
+	AddEvent(event *model.Event) error
+	GetEvents() ([]model.Event, error)
+	DeleteEvent(id uint) error
+}
+
+type GormEventRepository struct {
+	db *gorm.DB
+}
+
+func NewGormEventRepository(db *gorm.DB) *GormEventRepository {
+	return &GormEventRepository{db: db}
+}
 
 func Configure() (*gorm.DB, error) {
 	db, err := gorm.Open(sqlite.Open("test.db"), &gorm.Config{})
@@ -23,32 +36,31 @@ func Configure() (*gorm.DB, error) {
 		return nil, err
 	}
 
-	DB = db
-	return DB, nil
+	return db, nil
 }
 
-func AddEvent(event *model.Event) error {
-	if DB == nil {
+func (r *GormEventRepository) AddEvent(event *model.Event) error {
+	if r == nil || r.db == nil {
 		return fmt.Errorf("database not configured")
 	}
-	return DB.Create(event).Error
+	return r.db.Create(event).Error
 }
 
-func GetEvents() ([]model.Event, error) {
-	if DB == nil {
+func (r *GormEventRepository) GetEvents() ([]model.Event, error) {
+	if r == nil || r.db == nil {
 		return nil, fmt.Errorf("database not configured")
 	}
 	var events []model.Event
-	err := DB.Preload("Tickets").Find(&events).Error
+	err := r.db.Preload("Tickets").Find(&events).Error
 	return events, err
 }
 
-func DeleteEvent(id uint) error {
-	if DB == nil {
+func (r *GormEventRepository) DeleteEvent(id uint) error {
+	if r == nil || r.db == nil {
 		return fmt.Errorf("database not configured")
 	}
 
-	result := DB.Delete(&model.Event{}, id)
+	result := r.db.Delete(&model.Event{}, id)
 	if result.Error != nil {
 		return result.Error
 	}
