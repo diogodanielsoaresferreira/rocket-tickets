@@ -185,3 +185,65 @@ func TestDeleteEventInvalidID(t *testing.T) {
 		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, resp.Code)
 	}
 }
+
+func TestPostEventRejectsTicketPriceAndQuantityNotGreaterThanZero(t *testing.T) {
+	setupTestDB(t)
+	gin.SetMode(gin.TestMode)
+	r := setupRouter()
+
+	payload := map[string]any{
+		"title":  "Invalid Pricing Event",
+		"date":   "2025-07-10T19:30:00Z",
+		"venue":  "City Arena",
+		"artist": "The Rockets",
+		"tickets": []map[string]any{
+			{
+				"category":  "General",
+				"price":     0,
+				"quantity":  0,
+				"available": 0,
+			},
+		},
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("failed to marshal payload: %v", err)
+	}
+
+	resp := performRequest(r, http.MethodPost, "/event", body)
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d (body: %s)", http.StatusBadRequest, resp.Code, resp.Body.String())
+	}
+}
+
+func TestPostEventRejectsAvailableGreaterThanQuantity(t *testing.T) {
+	setupTestDB(t)
+	gin.SetMode(gin.TestMode)
+	r := setupRouter()
+
+	payload := map[string]any{
+		"title":  "Invalid Availability Event",
+		"date":   "2025-07-10T19:30:00Z",
+		"venue":  "City Arena",
+		"artist": "The Rockets",
+		"tickets": []map[string]any{
+			{
+				"category":  "General",
+				"price":     50.5,
+				"quantity":  10,
+				"available": 11,
+			},
+		},
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("failed to marshal payload: %v", err)
+	}
+
+	resp := performRequest(r, http.MethodPost, "/event", body)
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d (body: %s)", http.StatusBadRequest, resp.Code, resp.Body.String())
+	}
+}

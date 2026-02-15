@@ -10,9 +10,9 @@ type TicketsCategory struct {
 	gorm.Model
 	EventID   uint    `json:"-"`
 	Category  string  `json:"category" binding:"required"`
-	Price     float64 `json:"price" binding:"required"`
-	Quantity  int     `json:"quantity" binding:"required"`
-	Available int     `json:"available" binding:"required"`
+	Price     float64 `json:"price" binding:"required,gt=0"`
+	Quantity  int     `json:"quantity" binding:"required,gt=0"`
+	Available int     `json:"available" binding:"required,gte=0,ltefield=Quantity"`
 }
 
 type Event struct {
