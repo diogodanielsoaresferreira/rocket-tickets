@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"errors"
 	"fmt"
 
 	"gorm.io/driver/sqlite"
@@ -10,6 +11,7 @@ import (
 )
 
 var DB *gorm.DB
+var ErrEventNotFound = errors.New("event not found")
 
 func Configure() (*gorm.DB, error) {
 	db, err := gorm.Open(sqlite.Open("test.db"), &gorm.Config{})
@@ -45,5 +47,14 @@ func DeleteEvent(id uint) error {
 	if DB == nil {
 		return fmt.Errorf("database not configured")
 	}
-	return DB.Delete(&model.Event{}, id).Error
+
+	result := DB.Delete(&model.Event{}, id)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrEventNotFound
+	}
+
+	return nil
 }

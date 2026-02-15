@@ -42,6 +42,10 @@ func DeleteEvent(c *gin.Context) {
 	id := uint(idUint64)
 
 	if err := repository.DeleteEvent(id); err != nil {
+		if err == repository.ErrEventNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

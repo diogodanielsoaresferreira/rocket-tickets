@@ -186,6 +186,18 @@ func TestDeleteEventInvalidID(t *testing.T) {
 	}
 }
 
+func TestDeleteEventNotFound(t *testing.T) {
+	setupTestDB(t)
+	gin.SetMode(gin.TestMode)
+	r := setupRouter()
+
+	resp := performRequest(r, http.MethodDelete, "/event/99999", nil)
+
+	if resp.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d (body: %s)", http.StatusNotFound, resp.Code, resp.Body.String())
+	}
+}
+
 func TestPostEventRejectsTicketPriceAndQuantityNotGreaterThanZero(t *testing.T) {
 	setupTestDB(t)
 	gin.SetMode(gin.TestMode)
