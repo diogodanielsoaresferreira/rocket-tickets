@@ -21,5 +21,5 @@ type Event struct {
 	Date    time.Time          `json:"date" binding:"required"`
 	Venue   string             `json:"venue" binding:"required"`
 	Artist  string             `json:"artist" binding:"required"`
-	Tickets *[]TicketsCategory `json:"tickets" gorm:"foreignKey:EventID;constraint:OnDelete:CASCADE;" binding:"dive,required"`
+	Tickets *[]TicketsCategory `json:"tickets" gorm:"foreignKey:EventID;constraint:OnDelete:CASCADE;" binding:"omitempty,dive"`
 }

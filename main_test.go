@@ -126,7 +126,7 @@ func TestPostGetAndDeleteEventFlow(t *testing.T) {
 	}
 }
 
-func TestPostEventWithEmptyTicketsSlice(t *testing.T) {
+func TestPostEventWithoutTicketsDefaultsToEmptySlice(t *testing.T) {
 	setupTestDB(t)
 	gin.SetMode(gin.TestMode)
 	r := setupRouter()
@@ -136,7 +136,6 @@ func TestPostEventWithEmptyTicketsSlice(t *testing.T) {
 		"date":   time.Date(2025, time.August, 20, 21, 0, 0, 0, time.UTC).Format(time.RFC3339),
 		"venue":  "Riverside",
 		"artist": "Nora",
-		"tickets": []map[string]any{},
 	}
 
 	body, err := json.Marshal(payload)
