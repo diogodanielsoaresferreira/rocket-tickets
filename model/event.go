@@ -7,19 +7,25 @@ import (
 )
 
 type TicketsCategory struct {
-	gorm.Model
-	EventID   uint    `json:"-"`
-	Category  string  `json:"category" binding:"required"`
-	Price     float64 `json:"price" binding:"required,gt=0"`
-	Quantity  int     `json:"quantity" binding:"required,gt=0"`
-	Available int     `json:"available" binding:"required,gte=0,ltefield=Quantity"`
+	ID        uint           `json:"id" gorm:"primaryKey"`
+	CreatedAt time.Time      `json:"createdAt"`
+	UpdatedAt time.Time      `json:"updatedAt"`
+	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
+	EventID   uint           `json:"-"`
+	Category  string         `json:"category" binding:"required"`
+	Price     float64        `json:"price" binding:"required,gt=0"`
+	Quantity  int            `json:"quantity" binding:"required,gt=0"`
+	Available int            `json:"available" binding:"required,gte=0,ltefield=Quantity"`
 }
 
 type Event struct {
-	gorm.Model
-	Title   string             `json:"title" binding:"required"`
-	Date    time.Time          `json:"date" binding:"required"`
-	Venue   string             `json:"venue" binding:"required"`
-	Artist  string             `json:"artist" binding:"required"`
-	Tickets *[]TicketsCategory `json:"tickets" gorm:"foreignKey:EventID;constraint:OnDelete:CASCADE;" binding:"omitempty,dive"`
+	ID        uint               `json:"id" gorm:"primaryKey"`
+	CreatedAt time.Time          `json:"createdAt"`
+	UpdatedAt time.Time          `json:"updatedAt"`
+	DeletedAt gorm.DeletedAt     `json:"-" gorm:"index"`
+	Title     string             `json:"title" binding:"required"`
+	Date      time.Time          `json:"date" binding:"required"`
+	Venue     string             `json:"venue" binding:"required"`
+	Artist    string             `json:"artist" binding:"required"`
+	Tickets   *[]TicketsCategory `json:"tickets" gorm:"foreignKey:EventID;constraint:OnDelete:CASCADE;" binding:"omitempty,dive"`
 }
