@@ -267,3 +267,70 @@ func TestPostEventRejectsAvailableGreaterThanQuantity(t *testing.T) {
 		t.Fatalf("expected status %d, got %d (body: %s)", http.StatusBadRequest, resp.Code, resp.Body.String())
 	}
 }
+
+func TestGetEventByIDExisting(t *testing.T) {
+	eventRepository := setupTestRepository(t)
+	gin.SetMode(gin.TestMode)
+	eventHandler := handler.NewEventHandler(eventRepository)
+	r := setupRouter(eventHandler)
+
+	payload := map[string]any{
+		"title":  "Solo Show",
+		"date":   "2025-09-15T21:00:00Z",
+		"venue":  "Main Hall",
+		"artist": "Echo",
+		"tickets": []map[string]any{
+			{
+				"category":  "VIP",
+				"price":     120.0,
+				"quantity":  20,
+				"available": 20,
+			},
+		},
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("failed to marshal payload: %v", err)
+	}
+
+	createResp := performRequest(r, http.MethodPost, "/event", body)
+	if createResp.Code != http.StatusCreated {
+		t.Fatalf("expected status %d, got %d (body: %s)", http.StatusCreated, createResp.Code, createResp.Body.String())
+	}
+
+	var created model.Event
+	if err := json.Unmarshal(createResp.Body.Bytes(), &created); err != nil {
+		t.Fatalf("failed to decode create response: %v", err)
+	}
+
+	getPath := "/event/" + strconv.FormatUint(uint64(created.ID), 10)
+	getResp := performRequest(r, http.MethodGet, getPath, nil)
+	if getResp.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d (body: %s)", http.StatusOK, getResp.Code, getResp.Body.String())
+	}
+
+	var fetched model.Event
+	if err := json.Unmarshal(getResp.Body.Bytes(), &fetched); err != nil {
+		t.Fatalf("failed to decode get-by-id response: %v", err)
+	}
+
+	if fetched.ID != created.ID {
+		t.Fatalf("expected ID %d, got %d", created.ID, fetched.ID)
+	}
+	if fetched.Title != "Solo Show" {
+		t.Fatalf("expected title Solo Show, got %q", fetched.Title)
+	}
+}
+
+func TestGetEventByIDNotFound(t *testing.T) {
+	eventRepository := setupTestRepository(t)
+	gin.SetMode(gin.TestMode)
+	eventHandler := handler.NewEventHandler(eventRepository)
+	r := setupRouter(eventHandler)
+
+	resp := performRequest(r, http.MethodGet, "/event/99999", nil)
+	if resp.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d (body: %s)", http.StatusNotFound, resp.Code, resp.Body.String())
+	}
+}

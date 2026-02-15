@@ -41,6 +41,28 @@ func (h *EventHandler) PostEvent(c *gin.Context) {
 	c.IndentedJSON(http.StatusCreated, event)
 }
 
+func (h *EventHandler) GetEvent(c *gin.Context) {
+	idStr := c.Param("id")
+	idUint64, err := strconv.ParseUint(idStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid ID"})
+		return
+	}
+	id := uint(idUint64)
+
+	event, err := h.repo.GetEvent(id)
+	if err != nil {
+		if errors.Is(err, repository.ErrEventNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.IndentedJSON(http.StatusOK, event)
+}
+
 func (h *EventHandler) DeleteEvent(c *gin.Context) {
 	idStr := c.Param("id")
 	idUint64, err := strconv.ParseUint(idStr, 10, 32)

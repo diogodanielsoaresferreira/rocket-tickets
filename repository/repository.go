@@ -15,6 +15,7 @@ var ErrEventNotFound = errors.New("event not found")
 type EventStore interface {
 	AddEvent(event *model.Event) error
 	GetEvents() ([]model.Event, error)
+	GetEvent(id uint) (model.Event, error)
 	DeleteEvent(id uint) error
 }
 
@@ -53,6 +54,19 @@ func (r *GormEventRepository) GetEvents() ([]model.Event, error) {
 	var events []model.Event
 	err := r.db.Preload("Tickets").Find(&events).Error
 	return events, err
+}
+
+func (r *GormEventRepository) GetEvent(id uint) (model.Event, error) {
+	if r == nil || r.db == nil {
+		return model.Event{}, fmt.Errorf("database not configured")
+	}
+
+	var event model.Event
+	err := r.db.Preload("Tickets").First(&event, id).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return model.Event{}, ErrEventNotFound
+	}
+	return event, err
 }
 
 func (r *GormEventRepository) DeleteEvent(id uint) error {
