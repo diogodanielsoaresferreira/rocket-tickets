@@ -29,3 +29,10 @@ type Event struct {
 	Artist    string             `json:"artist" binding:"required"`
 	Tickets   *[]TicketsCategory `json:"tickets" gorm:"foreignKey:EventID;constraint:OnDelete:CASCADE;" binding:"omitempty,dive"`
 }
+
+type Ticket struct {
+	ID               uint      `json:"id" gorm:"primaryKey"`
+	TicketCategoryID uint      `json:"-"`
+	Status           string    `json:"status" gorm:"type:text;default:sold"`
+	SoldAt           time.Time `json:"soldAt,omitempty"`
+}

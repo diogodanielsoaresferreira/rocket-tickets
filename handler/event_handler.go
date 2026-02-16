@@ -116,3 +116,80 @@ func (h *EventHandler) DeleteEvent(c *gin.Context) {
 
 	c.Status(http.StatusNoContent)
 }
+
+func (h *EventHandler) CreateTicket(c *gin.Context) {
+	eventIdStr := c.Param("eventId")
+	eventIdUint64, err := strconv.ParseUint(eventIdStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid event ID"})
+		return
+	}
+	eventId := uint(eventIdUint64)
+
+	categoryIdStr := c.Param("categoryId")
+	categoryIdUint64, err := strconv.ParseUint(categoryIdStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid category ID"})
+		return
+	}
+	categoryId := uint(categoryIdUint64)
+
+	ticket, err := h.repo.CreateTicket(eventId, categoryId)
+	if err != nil {
+		if errors.Is(err, repository.ErrEventNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		if errors.Is(err, repository.ErrNoTicketsAvailable) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.IndentedJSON(http.StatusCreated, ticket)
+}
+
+func (h *EventHandler) CancelTicket(c *gin.Context) {
+	ticketIdStr := c.Param("ticketId")
+	ticketIdUint64, err := strconv.ParseUint(ticketIdStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid ticket ID"})
+		return
+	}
+	ticketId := uint(ticketIdUint64)
+
+	if err := h.repo.CancelTicket(ticketId); err != nil {
+		if errors.Is(err, repository.ErrTicketNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.Status(http.StatusNoContent)
+}
+
+func (h *EventHandler) GetTicket(c *gin.Context) {
+	ticketIdStr := c.Param("ticketId")
+	ticketIdUint64, err := strconv.ParseUint(ticketIdStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid ticket ID"})
+		return
+	}
+	ticketId := uint(ticketIdUint64)
+
+	ticket, err := h.repo.GetTicket(ticketId)
+	if err != nil {
+		if errors.Is(err, repository.ErrTicketNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.IndentedJSON(http.StatusOK, ticket)
+}

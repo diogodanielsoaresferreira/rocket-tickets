@@ -17,6 +17,10 @@ func setupRouter(eventHandler *handler.EventHandler) *gin.Engine {
 	r.PUT("/event/:id", eventHandler.UpdateEvent)
 	r.DELETE("/event/:id", eventHandler.DeleteEvent)
 
+	r.POST("/event/:eventId/category/:categoryId", eventHandler.CreateTicket)
+	r.DELETE("/ticket/:ticketId", eventHandler.CancelTicket)
+	r.GET("/ticket/:ticketId", eventHandler.GetTicket)
+
 	return r
 }
 

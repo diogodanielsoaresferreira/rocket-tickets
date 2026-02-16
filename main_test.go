@@ -26,7 +26,7 @@ func setupTestRepository(t *testing.T) repository.EventStore {
 		t.Fatalf("failed to open test database: %v", err)
 	}
 
-	if err := db.AutoMigrate(&model.Event{}, &model.TicketsCategory{}); err != nil {
+	if err := db.AutoMigrate(&model.Event{}, &model.TicketsCategory{}, &model.Ticket{}); err != nil {
 		t.Fatalf("failed to migrate test database: %v", err)
 	}
 
@@ -40,6 +40,63 @@ func performRequest(r http.Handler, method, path string, body []byte) *httptest.
 	resp := httptest.NewRecorder()
 	r.ServeHTTP(resp, req)
 	return resp
+}
+
+func createEventWithSingleCategory(t *testing.T, r http.Handler, available int) (uint, uint) {
+	t.Helper()
+
+	payload := map[string]any{
+		"title":  "Ticket Test Event",
+		"date":   "2025-11-01T20:00:00Z",
+		"venue":  "Hall A",
+		"artist": "Band X",
+		"tickets": []map[string]any{
+			{
+				"category":  "General",
+				"price":     10.0,
+				"quantity":  10,
+				"available": available,
+			},
+		},
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("failed to marshal create event payload: %v", err)
+	}
+
+	createResp := performRequest(r, http.MethodPost, "/event", body)
+	if createResp.Code != http.StatusCreated {
+		t.Fatalf("expected status %d, got %d (body: %s)", http.StatusCreated, createResp.Code, createResp.Body.String())
+	}
+
+	var created model.Event
+	if err := json.Unmarshal(createResp.Body.Bytes(), &created); err != nil {
+		t.Fatalf("failed to decode create event response: %v", err)
+	}
+
+	if created.Tickets == nil || len(*created.Tickets) != 1 {
+		t.Fatalf("expected one ticket category, got %+v", created.Tickets)
+	}
+
+	return created.ID, (*created.Tickets)[0].ID
+}
+
+func getEventByID(t *testing.T, r http.Handler, eventID uint) model.Event {
+	t.Helper()
+
+	path := "/event/" + strconv.FormatUint(uint64(eventID), 10)
+	resp := performRequest(r, http.MethodGet, path, nil)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d (body: %s)", http.StatusOK, resp.Code, resp.Body.String())
+	}
+
+	var event model.Event
+	if err := json.Unmarshal(resp.Body.Bytes(), &event); err != nil {
+		t.Fatalf("failed to decode get event response: %v", err)
+	}
+
+	return event
 }
 
 func TestPostGetAndDeleteEventFlow(t *testing.T) {
@@ -531,5 +588,162 @@ func TestUpdateEventWithNoTicketsClearsTickets(t *testing.T) {
 	}
 	if len(*fetched.Tickets) != 0 {
 		t.Fatalf("expected tickets to be cleared, got %d", len(*fetched.Tickets))
+	}
+}
+
+func TestCreateTicket(t *testing.T) {
+	eventRepository := setupTestRepository(t)
+	gin.SetMode(gin.TestMode)
+	eventHandler := handler.NewEventHandler(eventRepository)
+	r := setupRouter(eventHandler)
+
+	eventID, categoryID := createEventWithSingleCategory(t, r, 2)
+
+	path := "/event/" + strconv.FormatUint(uint64(eventID), 10) + "/category/" + strconv.FormatUint(uint64(categoryID), 10)
+	createResp := performRequest(r, http.MethodPost, path, nil)
+	if createResp.Code != http.StatusCreated {
+		t.Fatalf("expected status %d, got %d (body: %s)", http.StatusCreated, createResp.Code, createResp.Body.String())
+	}
+
+	var ticket model.Ticket
+	if err := json.Unmarshal(createResp.Body.Bytes(), &ticket); err != nil {
+		t.Fatalf("failed to decode create ticket response: %v", err)
+	}
+	if ticket.ID == 0 {
+		t.Fatalf("expected created ticket ID to be populated")
+	}
+	if ticket.Status != "sold" {
+		t.Fatalf("expected ticket status sold, got %q", ticket.Status)
+	}
+
+	event := getEventByID(t, r, eventID)
+	if event.Tickets == nil || len(*event.Tickets) != 1 {
+		t.Fatalf("expected one ticket category, got %+v", event.Tickets)
+	}
+	if (*event.Tickets)[0].Available != 1 {
+		t.Fatalf("expected available to decrease to 1, got %d", (*event.Tickets)[0].Available)
+	}
+}
+
+func TestCreateTicketWhenAvailableIsZeroReturnsError(t *testing.T) {
+	eventRepository := setupTestRepository(t)
+	gin.SetMode(gin.TestMode)
+	eventHandler := handler.NewEventHandler(eventRepository)
+	r := setupRouter(eventHandler)
+
+	eventID, categoryID := createEventWithSingleCategory(t, r, 0)
+
+	path := "/event/" + strconv.FormatUint(uint64(eventID), 10) + "/category/" + strconv.FormatUint(uint64(categoryID), 10)
+	createResp := performRequest(r, http.MethodPost, path, nil)
+	if createResp.Code < 400 {
+		t.Fatalf("expected an error status, got %d (body: %s)", createResp.Code, createResp.Body.String())
+	}
+}
+
+func TestCreateTicketUnknownCategoryOrEventReturns404(t *testing.T) {
+	eventRepository := setupTestRepository(t)
+	gin.SetMode(gin.TestMode)
+	eventHandler := handler.NewEventHandler(eventRepository)
+	r := setupRouter(eventHandler)
+
+	eventID, categoryID := createEventWithSingleCategory(t, r, 1)
+
+	unknownCategoryPath := "/event/" + strconv.FormatUint(uint64(eventID), 10) + "/category/999999"
+	unknownCategoryResp := performRequest(r, http.MethodPost, unknownCategoryPath, nil)
+	if unknownCategoryResp.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d (body: %s)", http.StatusNotFound, unknownCategoryResp.Code, unknownCategoryResp.Body.String())
+	}
+
+	unknownEventPath := "/event/999999/category/" + strconv.FormatUint(uint64(categoryID), 10)
+	unknownEventResp := performRequest(r, http.MethodPost, unknownEventPath, nil)
+	if unknownEventResp.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d (body: %s)", http.StatusNotFound, unknownEventResp.Code, unknownEventResp.Body.String())
+	}
+}
+
+func TestCancelTicketThatDoesNotExistReturns404(t *testing.T) {
+	eventRepository := setupTestRepository(t)
+	gin.SetMode(gin.TestMode)
+	eventHandler := handler.NewEventHandler(eventRepository)
+	r := setupRouter(eventHandler)
+
+	resp := performRequest(r, http.MethodDelete, "/ticket/999999", nil)
+	if resp.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d (body: %s)", http.StatusNotFound, resp.Code, resp.Body.String())
+	}
+}
+
+func TestCreateAndCancelTicketIncreasesAvailable(t *testing.T) {
+	eventRepository := setupTestRepository(t)
+	gin.SetMode(gin.TestMode)
+	eventHandler := handler.NewEventHandler(eventRepository)
+	r := setupRouter(eventHandler)
+
+	eventID, categoryID := createEventWithSingleCategory(t, r, 1)
+	createPath := "/event/" + strconv.FormatUint(uint64(eventID), 10) + "/category/" + strconv.FormatUint(uint64(categoryID), 10)
+	createResp := performRequest(r, http.MethodPost, createPath, nil)
+	if createResp.Code != http.StatusCreated {
+		t.Fatalf("expected status %d, got %d (body: %s)", http.StatusCreated, createResp.Code, createResp.Body.String())
+	}
+
+	var ticket model.Ticket
+	if err := json.Unmarshal(createResp.Body.Bytes(), &ticket); err != nil {
+		t.Fatalf("failed to decode create ticket response: %v", err)
+	}
+	if ticket.ID == 0 {
+		t.Fatalf("expected created ticket ID to be populated")
+	}
+
+	eventAfterCreate := getEventByID(t, r, eventID)
+	if (*eventAfterCreate.Tickets)[0].Available != 0 {
+		t.Fatalf("expected available to be 0 after create, got %d", (*eventAfterCreate.Tickets)[0].Available)
+	}
+
+	cancelPath := "/ticket/" + strconv.FormatUint(uint64(ticket.ID), 10)
+	cancelResp := performRequest(r, http.MethodDelete, cancelPath, nil)
+	if cancelResp.Code != http.StatusNoContent {
+		t.Fatalf("expected status %d, got %d (body: %s)", http.StatusNoContent, cancelResp.Code, cancelResp.Body.String())
+	}
+
+	eventAfterCancel := getEventByID(t, r, eventID)
+	if (*eventAfterCancel.Tickets)[0].Available != 1 {
+		t.Fatalf("expected available to increase to 1 after cancel, got %d", (*eventAfterCancel.Tickets)[0].Available)
+	}
+}
+
+func TestGetTicketWorks(t *testing.T) {
+	eventRepository := setupTestRepository(t)
+	gin.SetMode(gin.TestMode)
+	eventHandler := handler.NewEventHandler(eventRepository)
+	r := setupRouter(eventHandler)
+
+	eventID, categoryID := createEventWithSingleCategory(t, r, 1)
+	createPath := "/event/" + strconv.FormatUint(uint64(eventID), 10) + "/category/" + strconv.FormatUint(uint64(categoryID), 10)
+	createResp := performRequest(r, http.MethodPost, createPath, nil)
+	if createResp.Code != http.StatusCreated {
+		t.Fatalf("expected status %d, got %d (body: %s)", http.StatusCreated, createResp.Code, createResp.Body.String())
+	}
+
+	var createdTicket model.Ticket
+	if err := json.Unmarshal(createResp.Body.Bytes(), &createdTicket); err != nil {
+		t.Fatalf("failed to decode create ticket response: %v", err)
+	}
+
+	getPath := "/ticket/" + strconv.FormatUint(uint64(createdTicket.ID), 10)
+	getResp := performRequest(r, http.MethodGet, getPath, nil)
+	if getResp.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d (body: %s)", http.StatusOK, getResp.Code, getResp.Body.String())
+	}
+
+	var fetchedTicket model.Ticket
+	if err := json.Unmarshal(getResp.Body.Bytes(), &fetchedTicket); err != nil {
+		t.Fatalf("failed to decode get ticket response: %v", err)
+	}
+
+	if fetchedTicket.ID != createdTicket.ID {
+		t.Fatalf("expected ticket ID %d, got %d", createdTicket.ID, fetchedTicket.ID)
+	}
+	if fetchedTicket.Status != "sold" {
+		t.Fatalf("expected status sold, got %q", fetchedTicket.Status)
 	}
 }

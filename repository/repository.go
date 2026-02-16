@@ -3,6 +3,7 @@ package repository
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -11,6 +12,8 @@ import (
 )
 
 var ErrEventNotFound = errors.New("event not found")
+var ErrTicketNotFound = errors.New("ticket not found")
+var ErrNoTicketsAvailable = errors.New("no tickets available in this category")
 
 type EventStore interface {
 	AddEvent(event *model.Event) error
@@ -18,6 +21,10 @@ type EventStore interface {
 	GetEvent(id uint) (model.Event, error)
 	UpdateEvent(id uint, updatedEvent *model.Event) error
 	DeleteEvent(id uint) error
+
+	CreateTicket(eventID uint, categoryID uint) (model.Ticket, error)
+	CancelTicket(ticketID uint) error
+	GetTicket(ticketID uint) (model.Ticket, error)
 }
 
 type GormEventRepository struct {
@@ -34,7 +41,7 @@ func Configure() (*gorm.DB, error) {
 		return nil, err
 	}
 
-	if err := db.AutoMigrate(&model.Event{}, &model.TicketsCategory{}); err != nil {
+	if err := db.AutoMigrate(&model.Event{}, &model.TicketsCategory{}, &model.Ticket{}); err != nil {
 		return nil, err
 	}
 
@@ -136,4 +143,89 @@ func (r *GormEventRepository) DeleteEvent(id uint) error {
 	}
 
 	return nil
+}
+
+func (r *GormEventRepository) CreateTicket(eventID uint, categoryID uint) (model.Ticket, error) {
+	if r == nil || r.db == nil {
+		return model.Ticket{}, fmt.Errorf("database not configured")
+	}
+
+	var ticket = model.Ticket{
+		TicketCategoryID: categoryID,
+		Status:           "sold",
+		SoldAt:           time.Now(),
+	}
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		var category model.TicketsCategory
+		if err := tx.Where("id = ? AND event_id = ?", categoryID, eventID).First(&category).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrEventNotFound
+			}
+			return err
+		}
+
+		if category.Available <= 0 {
+			return ErrNoTicketsAvailable
+		}
+
+		ticket = model.Ticket{
+			TicketCategoryID: categoryID,
+			Status:           "sold",
+			SoldAt:           time.Now(),
+		}
+
+		if err := tx.Create(&ticket).Error; err != nil {
+			return err
+		}
+
+		if err := tx.Model(&model.TicketsCategory{}).
+			Where("id = ?", categoryID).
+			UpdateColumn("available", gorm.Expr("available - ?", 1)).Error; err != nil {
+			return fmt.Errorf("failed to update available quantity: %w", err)
+		}
+
+		return nil
+	})
+
+	return ticket, err
+}
+
+func (r *GormEventRepository) CancelTicket(ticketID uint) error {
+	if r == nil || r.db == nil {
+		return fmt.Errorf("database not configured")
+	}
+
+	result := r.db.Model(&model.Ticket{}).Where("id = ?", ticketID).Update("status", "cancelled")
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrTicketNotFound
+	}
+
+	var ticket model.Ticket
+	if err := r.db.First(&ticket, ticketID).Error; err != nil {
+		return fmt.Errorf("failed to find ticket for cancellation: %w", err)
+	}
+
+	if err := r.db.Model(&model.TicketsCategory{}).
+		Where("id = ?", ticket.TicketCategoryID).
+		UpdateColumn("available", gorm.Expr("available + ?", 1)).Error; err != nil {
+		return fmt.Errorf("failed to update available quantity: %w", err)
+	}
+
+	return nil
+}
+
+func (r *GormEventRepository) GetTicket(ticketID uint) (model.Ticket, error) {
+	if r == nil || r.db == nil {
+		return model.Ticket{}, fmt.Errorf("database not configured")
+	}
+
+	var ticket model.Ticket
+	err := r.db.First(&ticket, ticketID).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return model.Ticket{}, ErrTicketNotFound
+	}
+	return ticket, err
 }
