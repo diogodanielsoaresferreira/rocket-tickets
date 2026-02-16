@@ -635,8 +635,8 @@ func TestCreateTicketWhenAvailableIsZeroReturnsError(t *testing.T) {
 
 	path := "/event/" + strconv.FormatUint(uint64(eventID), 10) + "/category/" + strconv.FormatUint(uint64(categoryID), 10)
 	createResp := performRequest(r, http.MethodPost, path, nil)
-	if createResp.Code < 400 {
-		t.Fatalf("expected an error status, got %d (body: %s)", createResp.Code, createResp.Body.String())
+	if createResp.Code != http.StatusConflict {
+		t.Fatalf("expected status %d, got %d (body: %s)", http.StatusConflict, createResp.Code, createResp.Body.String())
 	}
 }
 
@@ -745,5 +745,43 @@ func TestGetTicketWorks(t *testing.T) {
 	}
 	if fetchedTicket.Status != "sold" {
 		t.Fatalf("expected status sold, got %q", fetchedTicket.Status)
+	}
+}
+
+func TestCancelTicketTwiceDoesNotIncreaseAvailabilityTwice(t *testing.T) {
+	eventRepository := setupTestRepository(t)
+	gin.SetMode(gin.TestMode)
+	eventHandler := handler.NewEventHandler(eventRepository)
+	r := setupRouter(eventHandler)
+
+	eventID, categoryID := createEventWithSingleCategory(t, r, 1)
+	createPath := "/event/" + strconv.FormatUint(uint64(eventID), 10) + "/category/" + strconv.FormatUint(uint64(categoryID), 10)
+	createResp := performRequest(r, http.MethodPost, createPath, nil)
+	if createResp.Code != http.StatusCreated {
+		t.Fatalf("expected status %d, got %d (body: %s)", http.StatusCreated, createResp.Code, createResp.Body.String())
+	}
+
+	var ticket model.Ticket
+	if err := json.Unmarshal(createResp.Body.Bytes(), &ticket); err != nil {
+		t.Fatalf("failed to decode create ticket response: %v", err)
+	}
+
+	cancelPath := "/ticket/" + strconv.FormatUint(uint64(ticket.ID), 10)
+	firstCancelResp := performRequest(r, http.MethodDelete, cancelPath, nil)
+	if firstCancelResp.Code != http.StatusNoContent {
+		t.Fatalf("expected status %d, got %d (body: %s)", http.StatusNoContent, firstCancelResp.Code, firstCancelResp.Body.String())
+	}
+
+	secondCancelResp := performRequest(r, http.MethodDelete, cancelPath, nil)
+	if secondCancelResp.Code != http.StatusConflict {
+		t.Fatalf("expected status %d, got %d (body: %s)", http.StatusConflict, secondCancelResp.Code, secondCancelResp.Body.String())
+	}
+
+	eventAfterSecondCancel := getEventByID(t, r, eventID)
+	if eventAfterSecondCancel.Tickets == nil || len(*eventAfterSecondCancel.Tickets) != 1 {
+		t.Fatalf("expected one ticket category, got %+v", eventAfterSecondCancel.Tickets)
+	}
+	if (*eventAfterSecondCancel.Tickets)[0].Available != 1 {
+		t.Fatalf("expected available to be 1 after double cancel, got %d", (*eventAfterSecondCancel.Tickets)[0].Available)
 	}
 }

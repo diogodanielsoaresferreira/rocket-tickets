@@ -141,7 +141,7 @@ func (h *EventHandler) CreateTicket(c *gin.Context) {
 			return
 		}
 		if errors.Is(err, repository.ErrNoTicketsAvailable) {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -163,6 +163,10 @@ func (h *EventHandler) CancelTicket(c *gin.Context) {
 	if err := h.repo.CancelTicket(ticketId); err != nil {
 		if errors.Is(err, repository.ErrTicketNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		if errors.Is(err, repository.ErrTicketAlreadyCancelled) {
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
