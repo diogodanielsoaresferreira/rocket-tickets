@@ -204,7 +204,7 @@ func TestDeleteEventNotFound(t *testing.T) {
 	}
 }
 
-func TestPostEventRejectsTicketPriceAndQuantityNotGreaterThanZero(t *testing.T) {
+func TestPostEventRejectsTicketQuantityNotGreaterThanZero(t *testing.T) {
 	eventRepository := setupTestRepository(t)
 	gin.SetMode(gin.TestMode)
 	eventHandler := handler.NewEventHandler(eventRepository)
@@ -218,11 +218,11 @@ func TestPostEventRejectsTicketPriceAndQuantityNotGreaterThanZero(t *testing.T) 
 		"tickets": []map[string]any{
 			{
 				"category":  "General",
-				"price":     0,
-				"quantity":  0,
-				"available": 0,
+					"price":     1,
+					"quantity":  0,
+					"available": 0,
+				},
 			},
-		},
 	}
 
 	body, err := json.Marshal(payload)
@@ -233,6 +233,38 @@ func TestPostEventRejectsTicketPriceAndQuantityNotGreaterThanZero(t *testing.T) 
 	resp := performRequest(r, http.MethodPost, "/event", body)
 	if resp.Code != http.StatusBadRequest {
 		t.Fatalf("expected status %d, got %d (body: %s)", http.StatusBadRequest, resp.Code, resp.Body.String())
+	}
+}
+
+func TestPostEventAllowsZeroTicketPrice(t *testing.T) {
+	eventRepository := setupTestRepository(t)
+	gin.SetMode(gin.TestMode)
+	eventHandler := handler.NewEventHandler(eventRepository)
+	r := setupRouter(eventHandler)
+
+	payload := map[string]any{
+		"title":  "Free Entry Event",
+		"date":   "2025-07-10T19:30:00Z",
+		"venue":  "City Arena",
+		"artist": "The Rockets",
+		"tickets": []map[string]any{
+			{
+				"category":  "General",
+				"price":     0,
+				"quantity":  100,
+				"available": 100,
+			},
+		},
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("failed to marshal payload: %v", err)
+	}
+
+	resp := performRequest(r, http.MethodPost, "/event", body)
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("expected status %d, got %d (body: %s)", http.StatusCreated, resp.Code, resp.Body.String())
 	}
 }
 
@@ -332,5 +364,172 @@ func TestGetEventByIDNotFound(t *testing.T) {
 	resp := performRequest(r, http.MethodGet, "/event/99999", nil)
 	if resp.Code != http.StatusNotFound {
 		t.Fatalf("expected status %d, got %d (body: %s)", http.StatusNotFound, resp.Code, resp.Body.String())
+	}
+}
+
+func TestUpdateEventReplacesTicketsAndAllowsZeroAvailable(t *testing.T) {
+	eventRepository := setupTestRepository(t)
+	gin.SetMode(gin.TestMode)
+	eventHandler := handler.NewEventHandler(eventRepository)
+	r := setupRouter(eventHandler)
+
+	createPayload := map[string]any{
+		"title":  "Launch Night",
+		"date":   "2025-10-10T20:00:00Z",
+		"venue":  "Sky Dome",
+		"artist": "Comets",
+		"tickets": []map[string]any{
+			{
+				"category":  "General",
+				"price":     80.0,
+				"quantity":  100,
+				"available": 100,
+			},
+			{
+				"category":  "VIP",
+				"price":     200.0,
+				"quantity":  20,
+				"available": 20,
+			},
+		},
+	}
+
+	createBody, err := json.Marshal(createPayload)
+	if err != nil {
+		t.Fatalf("failed to marshal create payload: %v", err)
+	}
+
+	createResp := performRequest(r, http.MethodPost, "/event", createBody)
+	if createResp.Code != http.StatusCreated {
+		t.Fatalf("expected status %d, got %d (body: %s)", http.StatusCreated, createResp.Code, createResp.Body.String())
+	}
+
+	var created model.Event
+	if err := json.Unmarshal(createResp.Body.Bytes(), &created); err != nil {
+		t.Fatalf("failed to decode create response: %v", err)
+	}
+
+	updatePayload := map[string]any{
+		"title":  "Launch Night - Updated",
+		"date":   "2025-10-11T20:00:00Z",
+		"venue":  "Sky Dome",
+		"artist": "Comets",
+		"tickets": []map[string]any{
+			{
+				"category":  "General",
+				"price":     90.0,
+				"quantity":  100,
+				"available": 0,
+			},
+		},
+	}
+
+	updateBody, err := json.Marshal(updatePayload)
+	if err != nil {
+		t.Fatalf("failed to marshal update payload: %v", err)
+	}
+
+	updatePath := "/event/" + strconv.FormatUint(uint64(created.ID), 10)
+	updateResp := performRequest(r, http.MethodPut, updatePath, updateBody)
+	if updateResp.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d (body: %s)", http.StatusOK, updateResp.Code, updateResp.Body.String())
+	}
+
+	getResp := performRequest(r, http.MethodGet, updatePath, nil)
+	if getResp.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d (body: %s)", http.StatusOK, getResp.Code, getResp.Body.String())
+	}
+
+	var fetched model.Event
+	if err := json.Unmarshal(getResp.Body.Bytes(), &fetched); err != nil {
+		t.Fatalf("failed to decode get response: %v", err)
+	}
+
+	if fetched.Title != "Launch Night - Updated" {
+		t.Fatalf("expected updated title, got %q", fetched.Title)
+	}
+	if fetched.Tickets == nil {
+		t.Fatalf("expected tickets to be non-nil")
+	}
+	if len(*fetched.Tickets) != 1 {
+		t.Fatalf("expected exactly 1 ticket after replacement, got %d", len(*fetched.Tickets))
+	}
+	if (*fetched.Tickets)[0].Available != 0 {
+		t.Fatalf("expected available to be 0, got %d", (*fetched.Tickets)[0].Available)
+	}
+	if (*fetched.Tickets)[0].Category != "General" {
+		t.Fatalf("expected remaining ticket category to be General, got %q", (*fetched.Tickets)[0].Category)
+	}
+}
+
+func TestUpdateEventWithNoTicketsClearsTickets(t *testing.T) {
+	eventRepository := setupTestRepository(t)
+	gin.SetMode(gin.TestMode)
+	eventHandler := handler.NewEventHandler(eventRepository)
+	r := setupRouter(eventHandler)
+
+	createPayload := map[string]any{
+		"title":  "Clear Tickets Event",
+		"date":   "2025-10-10T20:00:00Z",
+		"venue":  "Sky Dome",
+		"artist": "Comets",
+		"tickets": []map[string]any{
+			{
+				"category":  "General",
+				"price":     80.0,
+				"quantity":  100,
+				"available": 100,
+			},
+		},
+	}
+
+	createBody, err := json.Marshal(createPayload)
+	if err != nil {
+		t.Fatalf("failed to marshal create payload: %v", err)
+	}
+
+	createResp := performRequest(r, http.MethodPost, "/event", createBody)
+	if createResp.Code != http.StatusCreated {
+		t.Fatalf("expected status %d, got %d (body: %s)", http.StatusCreated, createResp.Code, createResp.Body.String())
+	}
+
+	var created model.Event
+	if err := json.Unmarshal(createResp.Body.Bytes(), &created); err != nil {
+		t.Fatalf("failed to decode create response: %v", err)
+	}
+
+	updatePayload := map[string]any{
+		"title":  "Clear Tickets Event",
+		"date":   "2025-10-12T20:00:00Z",
+		"venue":  "Sky Dome",
+		"artist": "Comets",
+	}
+
+	updateBody, err := json.Marshal(updatePayload)
+	if err != nil {
+		t.Fatalf("failed to marshal update payload: %v", err)
+	}
+
+	updatePath := "/event/" + strconv.FormatUint(uint64(created.ID), 10)
+	updateResp := performRequest(r, http.MethodPut, updatePath, updateBody)
+	if updateResp.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d (body: %s)", http.StatusOK, updateResp.Code, updateResp.Body.String())
+	}
+
+	getResp := performRequest(r, http.MethodGet, updatePath, nil)
+	if getResp.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d (body: %s)", http.StatusOK, getResp.Code, getResp.Body.String())
+	}
+
+	var fetched model.Event
+	if err := json.Unmarshal(getResp.Body.Bytes(), &fetched); err != nil {
+		t.Fatalf("failed to decode get response: %v", err)
+	}
+
+	if fetched.Tickets == nil {
+		t.Fatalf("expected tickets to be non-nil")
+	}
+	if len(*fetched.Tickets) != 0 {
+		t.Fatalf("expected tickets to be cleared, got %d", len(*fetched.Tickets))
 	}
 }

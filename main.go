@@ -14,6 +14,7 @@ func setupRouter(eventHandler *handler.EventHandler) *gin.Engine {
 	r.POST("/event", eventHandler.PostEvent)
 	r.GET("/event", eventHandler.GetEvents)
 	r.GET("/event/:id", eventHandler.GetEvent)
+	r.PUT("/event/:id", eventHandler.UpdateEvent)
 	r.DELETE("/event/:id", eventHandler.DeleteEvent)
 
 	return r

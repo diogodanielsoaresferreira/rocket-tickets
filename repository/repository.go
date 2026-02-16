@@ -16,6 +16,7 @@ type EventStore interface {
 	AddEvent(event *model.Event) error
 	GetEvents() ([]model.Event, error)
 	GetEvent(id uint) (model.Event, error)
+	UpdateEvent(id uint, updatedEvent *model.Event) error
 	DeleteEvent(id uint) error
 }
 
@@ -67,6 +68,58 @@ func (r *GormEventRepository) GetEvent(id uint) (model.Event, error) {
 		return model.Event{}, ErrEventNotFound
 	}
 	return event, err
+}
+
+func (r *GormEventRepository) UpdateEvent(id uint, updatedEvent *model.Event) error {
+	if r == nil || r.db == nil {
+		return fmt.Errorf("database not configured")
+	}
+
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		var existingEvent model.Event
+		err := tx.First(&existingEvent, id).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrEventNotFound
+		}
+		if err != nil {
+			return err
+		}
+
+		updatedEvent.ID = existingEvent.ID
+
+		// Use an explicit map so event zero values are included in SQL updates.
+		if err := tx.Model(&model.Event{}).
+			Where("id = ?", id).
+			Updates(map[string]any{
+				"title":  updatedEvent.Title,
+				"date":   updatedEvent.Date,
+				"venue":  updatedEvent.Venue,
+				"artist": updatedEvent.Artist,
+			}).Error; err != nil {
+			return err
+		}
+
+		if err := tx.Where("event_id = ?", id).Delete(&model.TicketsCategory{}).Error; err != nil {
+			return err
+		}
+
+		if updatedEvent.Tickets == nil || len(*updatedEvent.Tickets) == 0 {
+			return nil
+		}
+
+		tickets := *updatedEvent.Tickets
+		for i := range tickets {
+			tickets[i].ID = 0
+			tickets[i].EventID = id
+		}
+
+		if err := tx.Create(&tickets).Error; err != nil {
+			return err
+		}
+
+		updatedEvent.Tickets = &tickets
+		return nil
+	})
 }
 
 func (r *GormEventRepository) DeleteEvent(id uint) error {
