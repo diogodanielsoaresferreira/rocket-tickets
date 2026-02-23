@@ -42,6 +42,18 @@ func performRequest(r http.Handler, method, path string, body []byte) *httptest.
 	return resp
 }
 
+func setupGraphQLTestRouter(t *testing.T) *gin.Engine {
+	t.Helper()
+
+	eventRepository := setupTestRepository(t)
+	gin.SetMode(gin.TestMode)
+	eventHandler := handler.NewEventHandler(eventRepository)
+	r := setupRouter(eventHandler)
+	setupGraphQLRoutes(r, eventRepository)
+
+	return r
+}
+
 func createEventWithSingleCategory(t *testing.T, r http.Handler, available int) (uint, uint) {
 	t.Helper()
 
@@ -275,11 +287,11 @@ func TestPostEventRejectsTicketQuantityNotGreaterThanZero(t *testing.T) {
 		"tickets": []map[string]any{
 			{
 				"category":  "General",
-					"price":     1,
-					"quantity":  0,
-					"available": 0,
-				},
+				"price":     1,
+				"quantity":  0,
+				"available": 0,
 			},
+		},
 	}
 
 	body, err := json.Marshal(payload)
@@ -783,5 +795,156 @@ func TestCancelTicketTwiceDoesNotIncreaseAvailabilityTwice(t *testing.T) {
 	}
 	if (*eventAfterSecondCancel.Tickets)[0].Available != 1 {
 		t.Fatalf("expected available to be 1 after double cancel, got %d", (*eventAfterSecondCancel.Tickets)[0].Available)
+	}
+}
+
+func TestGraphQLEventsQueryReturnsEventsWithTicketCategories(t *testing.T) {
+	r := setupGraphQLTestRouter(t)
+
+	payload := map[string]any{
+		"title":  "GraphQL Festival",
+		"date":   "2025-11-01T20:00:00Z",
+		"venue":  "Graph Hall",
+		"artist": "The Nodes",
+		"tickets": []map[string]any{
+			{
+				"category":  "General",
+				"price":     50.0,
+				"quantity":  100,
+				"available": 88,
+			},
+		},
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("failed to marshal create event payload: %v", err)
+	}
+
+	createResp := performRequest(r, http.MethodPost, "/event", body)
+	if createResp.Code != http.StatusCreated {
+		t.Fatalf("expected status %d, got %d (body: %s)", http.StatusCreated, createResp.Code, createResp.Body.String())
+	}
+
+	graphQLBody := []byte(`{"query":"query { events { id title tickets { id category available } } }"}`)
+	resp := performRequest(r, http.MethodPost, "/query", graphQLBody)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d (body: %s)", http.StatusOK, resp.Code, resp.Body.String())
+	}
+
+	var graphQLResp struct {
+		Data struct {
+			Events []struct {
+				ID      uint   `json:"id"`
+				Title   string `json:"title"`
+				Tickets []struct {
+					ID        uint   `json:"id"`
+					Category  string `json:"category"`
+					Available int    `json:"available"`
+				} `json:"tickets"`
+			} `json:"events"`
+		} `json:"data"`
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+
+	if err := json.Unmarshal(resp.Body.Bytes(), &graphQLResp); err != nil {
+		t.Fatalf("failed to decode graphql response: %v", err)
+	}
+
+	if len(graphQLResp.Errors) != 0 {
+		t.Fatalf("expected no graphql errors, got %+v", graphQLResp.Errors)
+	}
+
+	var found bool
+	for _, event := range graphQLResp.Data.Events {
+		if event.Title != "GraphQL Festival" {
+			continue
+		}
+		if len(event.Tickets) != 1 {
+			t.Fatalf("expected 1 ticket category for GraphQL Festival, got %d", len(event.Tickets))
+		}
+		if event.Tickets[0].Category != "General" {
+			t.Fatalf("expected ticket category General, got %q", event.Tickets[0].Category)
+		}
+		if event.Tickets[0].Available != 88 {
+			t.Fatalf("expected available 88, got %d", event.Tickets[0].Available)
+		}
+		found = true
+		break
+	}
+
+	if !found {
+		t.Fatalf("expected to find GraphQL Festival event in response, got %d events", len(graphQLResp.Data.Events))
+	}
+}
+
+func TestGraphQLEventQueryByIDReturnsSingleEvent(t *testing.T) {
+	r := setupGraphQLTestRouter(t)
+	eventID, _ := createEventWithSingleCategory(t, r, 7)
+
+	graphQLPayload := map[string]any{
+		"query": `
+			query GetEventByID($id: UInt!) {
+				event(id: $id) {
+					id
+					title
+					tickets {
+						category
+						available
+					}
+				}
+			}
+		`,
+		"variables": map[string]any{
+			"id": eventID,
+		},
+	}
+
+	graphQLBody, err := json.Marshal(graphQLPayload)
+	if err != nil {
+		t.Fatalf("failed to marshal graphql payload: %v", err)
+	}
+
+	resp := performRequest(r, http.MethodPost, "/query", graphQLBody)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d (body: %s)", http.StatusOK, resp.Code, resp.Body.String())
+	}
+
+	var graphQLResp struct {
+		Data struct {
+			Event *struct {
+				ID      uint   `json:"id"`
+				Title   string `json:"title"`
+				Tickets []struct {
+					Category  string `json:"category"`
+					Available int    `json:"available"`
+				} `json:"tickets"`
+			} `json:"event"`
+		} `json:"data"`
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+
+	if err := json.Unmarshal(resp.Body.Bytes(), &graphQLResp); err != nil {
+		t.Fatalf("failed to decode graphql response: %v", err)
+	}
+
+	if len(graphQLResp.Errors) != 0 {
+		t.Fatalf("expected no graphql errors, got %+v", graphQLResp.Errors)
+	}
+	if graphQLResp.Data.Event == nil {
+		t.Fatalf("expected event in graphql response, got nil")
+	}
+	if graphQLResp.Data.Event.ID != eventID {
+		t.Fatalf("expected event ID %d, got %d", eventID, graphQLResp.Data.Event.ID)
+	}
+	if len(graphQLResp.Data.Event.Tickets) != 1 {
+		t.Fatalf("expected 1 ticket category, got %d", len(graphQLResp.Data.Event.Tickets))
+	}
+	if graphQLResp.Data.Event.Tickets[0].Available != 7 {
+		t.Fatalf("expected available 7, got %d", graphQLResp.Data.Event.Tickets[0].Available)
 	}
 }

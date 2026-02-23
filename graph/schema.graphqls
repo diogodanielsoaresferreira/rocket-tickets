@@ -1,0 +1,28 @@
+scalar Time
+scalar UInt
+
+type Query {
+  events: [Event!]!
+  event(id: UInt!): Event
+}
+
+type Event {
+  id: UInt!
+  createdAt: Time!
+  updatedAt: Time!
+  title: String!
+  date: Time!
+  venue: String!
+  artist: String!
+  tickets: [TicketsCategory!]!
+}
+
+type TicketsCategory {
+  id: UInt!
+  createdAt: Time!
+  updatedAt: Time!
+  category: String!
+  price: Float!
+  quantity: Int!
+  available: Int!
+}

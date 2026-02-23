@@ -7,12 +7,14 @@
 ## Tech Stack
 - Language: Go
 - HTTP: Gin (`handler/event_handler.go`)
+- GraphQL: gqlgen (`graph/*.go`, `graph/schema.graphqls`) served from `main.go`
 - Persistence: GORM + SQLite (`repository/repository.go`)
 - Tests: Go `testing` package (`main_test.go`)
 
 ## Local Run
 1. `go run main.go`
-2. Server starts on `:8080`
+2. Server starts on `:8080` with REST + GraphQL
+3. GraphQL Playground on `/`, GraphQL endpoint on `/query`
 
 ## Test Commands
 1. Run all tests: `go test ./...`
@@ -27,6 +29,7 @@
 - `POST /event/:eventId/category/:categoryId` (sell ticket)
 - `DELETE /ticket/:ticketId` (cancel ticket)
 - `GET /ticket/:ticketId`
+- GraphQL query endpoint: `POST /query` (Playground at `GET /`)
 
 ## Important Behavior Contracts
 - Selling a ticket:
@@ -47,6 +50,7 @@
 - Handlers: `handler/event_handler.go`
 - Repository + DB logic: `repository/repository.go`
 - Models: `model/event.go`
+- GraphQL schema/resolvers: `graph/schema.graphqls`, `graph/schema.resolvers.go`, `graph/resolver.go`
 - Integration-style tests: `main_test.go`
 
 ## Coding Rules For Agents
