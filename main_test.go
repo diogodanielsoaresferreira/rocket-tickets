@@ -948,3 +948,138 @@ func TestGraphQLEventQueryByIDReturnsSingleEvent(t *testing.T) {
 		t.Fatalf("expected available 7, got %d", graphQLResp.Data.Event.Tickets[0].Available)
 	}
 }
+
+func TestGraphQLCreateEventMutationRejectsInvalidTicketQuantity(t *testing.T) {
+	r := setupGraphQLTestRouter(t)
+
+	graphQLPayload := map[string]any{
+		"query": `
+			mutation CreateEvent(
+				$title: String!,
+				$date: Time!,
+				$venue: String!,
+				$artist: String!,
+				$tickets: [CreateTicketsCategoryInput!]!
+			) {
+				createEvent(title: $title, date: $date, venue: $venue, artist: $artist, tickets: $tickets) {
+					id
+				}
+			}
+		`,
+		"variables": map[string]any{
+			"title":  "GraphQL Invalid Create",
+			"date":   "2025-11-01T20:00:00Z",
+			"venue":  "Graph Hall",
+			"artist": "The Nodes",
+			"tickets": []map[string]any{
+				{
+					"category":  "General",
+					"price":     50.0,
+					"quantity":  0,
+					"available": 0,
+				},
+			},
+		},
+	}
+
+	graphQLBody, err := json.Marshal(graphQLPayload)
+	if err != nil {
+		t.Fatalf("failed to marshal graphql payload: %v", err)
+	}
+
+	resp := performRequest(r, http.MethodPost, "/query", graphQLBody)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d (body: %s)", http.StatusOK, resp.Code, resp.Body.String())
+	}
+
+	var graphQLResp struct {
+		Data struct {
+			CreateEvent *struct {
+				ID uint `json:"id"`
+			} `json:"createEvent"`
+		} `json:"data"`
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+
+	if err := json.Unmarshal(resp.Body.Bytes(), &graphQLResp); err != nil {
+		t.Fatalf("failed to decode graphql response: %v", err)
+	}
+
+	if len(graphQLResp.Errors) == 0 {
+		t.Fatalf("expected graphql validation error, got none")
+	}
+	if graphQLResp.Data.CreateEvent != nil {
+		t.Fatalf("expected createEvent result to be nil on validation error")
+	}
+}
+
+func TestGraphQLUpdateEventMutationRejectsInvalidAvailability(t *testing.T) {
+	r := setupGraphQLTestRouter(t)
+	eventID, _ := createEventWithSingleCategory(t, r, 5)
+
+	graphQLPayload := map[string]any{
+		"query": `
+			mutation UpdateEvent(
+				$id: UInt!,
+				$title: String!,
+				$date: Time!,
+				$venue: String!,
+				$artist: String!,
+				$tickets: [CreateTicketsCategoryInput!]
+			) {
+				updateEvent(id: $id, title: $title, date: $date, venue: $venue, artist: $artist, tickets: $tickets) {
+					id
+				}
+			}
+		`,
+		"variables": map[string]any{
+			"id":     eventID,
+			"title":  "GraphQL Invalid Update",
+			"date":   "2025-11-02T20:00:00Z",
+			"venue":  "Graph Hall",
+			"artist": "The Nodes",
+			"tickets": []map[string]any{
+				{
+					"category":  "General",
+					"price":     50.0,
+					"quantity":  1,
+					"available": 2,
+				},
+			},
+		},
+	}
+
+	graphQLBody, err := json.Marshal(graphQLPayload)
+	if err != nil {
+		t.Fatalf("failed to marshal graphql payload: %v", err)
+	}
+
+	resp := performRequest(r, http.MethodPost, "/query", graphQLBody)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d (body: %s)", http.StatusOK, resp.Code, resp.Body.String())
+	}
+
+	var graphQLResp struct {
+		Data struct {
+			UpdateEvent *struct {
+				ID uint `json:"id"`
+			} `json:"updateEvent"`
+		} `json:"data"`
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+
+	if err := json.Unmarshal(resp.Body.Bytes(), &graphQLResp); err != nil {
+		t.Fatalf("failed to decode graphql response: %v", err)
+	}
+
+	if len(graphQLResp.Errors) == 0 {
+		t.Fatalf("expected graphql validation error, got none")
+	}
+	if graphQLResp.Data.UpdateEvent != nil {
+		t.Fatalf("expected updateEvent result to be nil on validation error")
+	}
+}

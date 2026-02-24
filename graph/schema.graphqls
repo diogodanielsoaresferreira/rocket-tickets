@@ -26,3 +26,31 @@ type TicketsCategory {
   quantity: Int!
   available: Int!
 }
+
+input CreateTicketsCategoryInput {
+  category: String!
+  price: Float!
+  quantity: Int!
+  available: Int!
+}
+
+type Mutation {
+  createEvent(
+    title: String!
+    date: Time!
+    venue: String!
+    artist: String!
+    tickets: [CreateTicketsCategoryInput!]!
+  ): Event!
+  
+  updateEvent(
+    id: UInt!
+    title: String!
+    date: Time!
+    venue: String!
+    artist: String!
+    tickets: [CreateTicketsCategoryInput!]
+  ): Event!
+
+  deleteEvent(id: UInt!): Boolean!
+}

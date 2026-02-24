@@ -2,5 +2,15 @@
 
 package model
 
+type CreateTicketsCategoryInput struct {
+	Category  string  `json:"category"`
+	Price     float64 `json:"price"`
+	Quantity  int     `json:"quantity"`
+	Available int     `json:"available"`
+}
+
+type Mutation struct {
+}
+
 type Query struct {
 }

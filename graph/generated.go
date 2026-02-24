@@ -8,7 +8,8 @@ import (
 	"embed"
 	"errors"
 	"fmt"
-	"rocket-tickets/model"
+	"rocket-tickets/graph/model"
+	model1 "rocket-tickets/model"
 	"strconv"
 	"sync/atomic"
 	"time"
@@ -29,6 +30,7 @@ func NewExecutableSchema(cfg Config) graphql.ExecutableSchema {
 type Config = graphql.Config[ResolverRoot, DirectiveRoot, ComplexityRoot]
 
 type ResolverRoot interface {
+	Mutation() MutationResolver
 	Query() QueryResolver
 }
 
@@ -47,6 +49,12 @@ type ComplexityRoot struct {
 		Venue     func(childComplexity int) int
 	}
 
+	Mutation struct {
+		CreateEvent func(childComplexity int, title string, date time.Time, venue string, artist string, tickets []*model.CreateTicketsCategoryInput) int
+		DeleteEvent func(childComplexity int, id uint) int
+		UpdateEvent func(childComplexity int, id uint, title string, date time.Time, venue string, artist string, tickets []*model.CreateTicketsCategoryInput) int
+	}
+
 	Query struct {
 		Event  func(childComplexity int, id uint) int
 		Events func(childComplexity int) int
@@ -63,9 +71,14 @@ type ComplexityRoot struct {
 	}
 }
 
+type MutationResolver interface {
+	CreateEvent(ctx context.Context, title string, date time.Time, venue string, artist string, tickets []*model.CreateTicketsCategoryInput) (*model1.Event, error)
+	UpdateEvent(ctx context.Context, id uint, title string, date time.Time, venue string, artist string, tickets []*model.CreateTicketsCategoryInput) (*model1.Event, error)
+	DeleteEvent(ctx context.Context, id uint) (bool, error)
+}
 type QueryResolver interface {
-	Events(ctx context.Context) ([]*model.Event, error)
-	Event(ctx context.Context, id uint) (*model.Event, error)
+	Events(ctx context.Context) ([]*model1.Event, error)
+	Event(ctx context.Context, id uint) (*model1.Event, error)
 }
 
 type executableSchema graphql.ExecutableSchemaState[ResolverRoot, DirectiveRoot, ComplexityRoot]
@@ -130,6 +143,40 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Event.Venue(childComplexity), true
+
+	case "Mutation.createEvent":
+		if e.ComplexityRoot.Mutation.CreateEvent == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_createEvent_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.CreateEvent(childComplexity, args["title"].(string), args["date"].(time.Time), args["venue"].(string), args["artist"].(string), args["tickets"].([]*model.CreateTicketsCategoryInput)), true
+	case "Mutation.deleteEvent":
+		if e.ComplexityRoot.Mutation.DeleteEvent == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_deleteEvent_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.DeleteEvent(childComplexity, args["id"].(uint)), true
+	case "Mutation.updateEvent":
+		if e.ComplexityRoot.Mutation.UpdateEvent == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_updateEvent_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.UpdateEvent(childComplexity, args["id"].(uint), args["title"].(string), args["date"].(time.Time), args["venue"].(string), args["artist"].(string), args["tickets"].([]*model.CreateTicketsCategoryInput)), true
 
 	case "Query.event":
 		if e.ComplexityRoot.Query.Event == nil {
@@ -199,7 +246,9 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 func (e *executableSchema) Exec(ctx context.Context) graphql.ResponseHandler {
 	opCtx := graphql.GetOperationContext(ctx)
 	ec := newExecutionContext(opCtx, e, make(chan graphql.DeferredResult))
-	inputUnmarshalMap := graphql.BuildUnmarshalerMap()
+	inputUnmarshalMap := graphql.BuildUnmarshalerMap(
+		ec.unmarshalInputCreateTicketsCategoryInput,
+	)
 	first := true
 
 	switch opCtx.Operation.Operation {
@@ -232,6 +281,21 @@ func (e *executableSchema) Exec(ctx context.Context) graphql.ResponseHandler {
 			}
 
 			return &response
+		}
+	case ast.Mutation:
+		return func(ctx context.Context) *graphql.Response {
+			if !first {
+				return nil
+			}
+			first = false
+			ctx = graphql.WithUnmarshalerMap(ctx, inputUnmarshalMap)
+			data := ec._Mutation(ctx, opCtx.Operation.SelectionSet)
+			var buf bytes.Buffer
+			data.MarshalGQL(&buf)
+
+			return &graphql.Response{
+				Data: buf.Bytes(),
+			}
 		}
 
 	default:
@@ -277,6 +341,84 @@ var parsedSchema = gqlparser.MustLoadSchema(sources...)
 // endregion ************************** generated!.gotpl **************************
 
 // region    ***************************** args.gotpl *****************************
+
+func (ec *executionContext) field_Mutation_createEvent_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "title", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["title"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "date", ec.unmarshalNTime2timeᚐTime)
+	if err != nil {
+		return nil, err
+	}
+	args["date"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "venue", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["venue"] = arg2
+	arg3, err := graphql.ProcessArgField(ctx, rawArgs, "artist", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["artist"] = arg3
+	arg4, err := graphql.ProcessArgField(ctx, rawArgs, "tickets", ec.unmarshalNCreateTicketsCategoryInput2ᚕᚖrocketᚑticketsᚋgraphᚋmodelᚐCreateTicketsCategoryInputᚄ)
+	if err != nil {
+		return nil, err
+	}
+	args["tickets"] = arg4
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_deleteEvent_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "id", ec.unmarshalNUInt2uint)
+	if err != nil {
+		return nil, err
+	}
+	args["id"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_updateEvent_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "id", ec.unmarshalNUInt2uint)
+	if err != nil {
+		return nil, err
+	}
+	args["id"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "title", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["title"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "date", ec.unmarshalNTime2timeᚐTime)
+	if err != nil {
+		return nil, err
+	}
+	args["date"] = arg2
+	arg3, err := graphql.ProcessArgField(ctx, rawArgs, "venue", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["venue"] = arg3
+	arg4, err := graphql.ProcessArgField(ctx, rawArgs, "artist", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["artist"] = arg4
+	arg5, err := graphql.ProcessArgField(ctx, rawArgs, "tickets", ec.unmarshalOCreateTicketsCategoryInput2ᚕᚖrocketᚑticketsᚋgraphᚋmodelᚐCreateTicketsCategoryInputᚄ)
+	if err != nil {
+		return nil, err
+	}
+	args["tickets"] = arg5
+	return args, nil
+}
 
 func (ec *executionContext) field_Query___type_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
@@ -352,7 +494,7 @@ func (ec *executionContext) field___Type_fields_args(ctx context.Context, rawArg
 
 // region    **************************** field.gotpl *****************************
 
-func (ec *executionContext) _Event_id(ctx context.Context, field graphql.CollectedField, obj *model.Event) (ret graphql.Marshaler) {
+func (ec *executionContext) _Event_id(ctx context.Context, field graphql.CollectedField, obj *model1.Event) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
 		ec.OperationContext,
@@ -381,7 +523,7 @@ func (ec *executionContext) fieldContext_Event_id(_ context.Context, field graph
 	return fc, nil
 }
 
-func (ec *executionContext) _Event_createdAt(ctx context.Context, field graphql.CollectedField, obj *model.Event) (ret graphql.Marshaler) {
+func (ec *executionContext) _Event_createdAt(ctx context.Context, field graphql.CollectedField, obj *model1.Event) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
 		ec.OperationContext,
@@ -410,7 +552,7 @@ func (ec *executionContext) fieldContext_Event_createdAt(_ context.Context, fiel
 	return fc, nil
 }
 
-func (ec *executionContext) _Event_updatedAt(ctx context.Context, field graphql.CollectedField, obj *model.Event) (ret graphql.Marshaler) {
+func (ec *executionContext) _Event_updatedAt(ctx context.Context, field graphql.CollectedField, obj *model1.Event) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
 		ec.OperationContext,
@@ -439,7 +581,7 @@ func (ec *executionContext) fieldContext_Event_updatedAt(_ context.Context, fiel
 	return fc, nil
 }
 
-func (ec *executionContext) _Event_title(ctx context.Context, field graphql.CollectedField, obj *model.Event) (ret graphql.Marshaler) {
+func (ec *executionContext) _Event_title(ctx context.Context, field graphql.CollectedField, obj *model1.Event) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
 		ec.OperationContext,
@@ -468,7 +610,7 @@ func (ec *executionContext) fieldContext_Event_title(_ context.Context, field gr
 	return fc, nil
 }
 
-func (ec *executionContext) _Event_date(ctx context.Context, field graphql.CollectedField, obj *model.Event) (ret graphql.Marshaler) {
+func (ec *executionContext) _Event_date(ctx context.Context, field graphql.CollectedField, obj *model1.Event) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
 		ec.OperationContext,
@@ -497,7 +639,7 @@ func (ec *executionContext) fieldContext_Event_date(_ context.Context, field gra
 	return fc, nil
 }
 
-func (ec *executionContext) _Event_venue(ctx context.Context, field graphql.CollectedField, obj *model.Event) (ret graphql.Marshaler) {
+func (ec *executionContext) _Event_venue(ctx context.Context, field graphql.CollectedField, obj *model1.Event) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
 		ec.OperationContext,
@@ -526,7 +668,7 @@ func (ec *executionContext) fieldContext_Event_venue(_ context.Context, field gr
 	return fc, nil
 }
 
-func (ec *executionContext) _Event_artist(ctx context.Context, field graphql.CollectedField, obj *model.Event) (ret graphql.Marshaler) {
+func (ec *executionContext) _Event_artist(ctx context.Context, field graphql.CollectedField, obj *model1.Event) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
 		ec.OperationContext,
@@ -555,7 +697,7 @@ func (ec *executionContext) fieldContext_Event_artist(_ context.Context, field g
 	return fc, nil
 }
 
-func (ec *executionContext) _Event_tickets(ctx context.Context, field graphql.CollectedField, obj *model.Event) (ret graphql.Marshaler) {
+func (ec *executionContext) _Event_tickets(ctx context.Context, field graphql.CollectedField, obj *model1.Event) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
 		ec.OperationContext,
@@ -596,6 +738,165 @@ func (ec *executionContext) fieldContext_Event_tickets(_ context.Context, field 
 			}
 			return nil, fmt.Errorf("no field named %q was found under type TicketsCategory", field.Name)
 		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_createEvent(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Mutation_createEvent,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().CreateEvent(ctx, fc.Args["title"].(string), fc.Args["date"].(time.Time), fc.Args["venue"].(string), fc.Args["artist"].(string), fc.Args["tickets"].([]*model.CreateTicketsCategoryInput))
+		},
+		nil,
+		ec.marshalNEvent2ᚖrocketᚑticketsᚋmodelᚐEvent,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Mutation_createEvent(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_Event_id(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_Event_createdAt(ctx, field)
+			case "updatedAt":
+				return ec.fieldContext_Event_updatedAt(ctx, field)
+			case "title":
+				return ec.fieldContext_Event_title(ctx, field)
+			case "date":
+				return ec.fieldContext_Event_date(ctx, field)
+			case "venue":
+				return ec.fieldContext_Event_venue(ctx, field)
+			case "artist":
+				return ec.fieldContext_Event_artist(ctx, field)
+			case "tickets":
+				return ec.fieldContext_Event_tickets(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Event", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_createEvent_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_updateEvent(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Mutation_updateEvent,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().UpdateEvent(ctx, fc.Args["id"].(uint), fc.Args["title"].(string), fc.Args["date"].(time.Time), fc.Args["venue"].(string), fc.Args["artist"].(string), fc.Args["tickets"].([]*model.CreateTicketsCategoryInput))
+		},
+		nil,
+		ec.marshalNEvent2ᚖrocketᚑticketsᚋmodelᚐEvent,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Mutation_updateEvent(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_Event_id(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_Event_createdAt(ctx, field)
+			case "updatedAt":
+				return ec.fieldContext_Event_updatedAt(ctx, field)
+			case "title":
+				return ec.fieldContext_Event_title(ctx, field)
+			case "date":
+				return ec.fieldContext_Event_date(ctx, field)
+			case "venue":
+				return ec.fieldContext_Event_venue(ctx, field)
+			case "artist":
+				return ec.fieldContext_Event_artist(ctx, field)
+			case "tickets":
+				return ec.fieldContext_Event_tickets(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Event", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_updateEvent_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_deleteEvent(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Mutation_deleteEvent,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().DeleteEvent(ctx, fc.Args["id"].(uint))
+		},
+		nil,
+		ec.marshalNBoolean2bool,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Mutation_deleteEvent(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_deleteEvent_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
 	}
 	return fc, nil
 }
@@ -814,7 +1115,7 @@ func (ec *executionContext) fieldContext_Query___schema(_ context.Context, field
 	return fc, nil
 }
 
-func (ec *executionContext) _TicketsCategory_id(ctx context.Context, field graphql.CollectedField, obj *model.TicketsCategory) (ret graphql.Marshaler) {
+func (ec *executionContext) _TicketsCategory_id(ctx context.Context, field graphql.CollectedField, obj *model1.TicketsCategory) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
 		ec.OperationContext,
@@ -843,7 +1144,7 @@ func (ec *executionContext) fieldContext_TicketsCategory_id(_ context.Context, f
 	return fc, nil
 }
 
-func (ec *executionContext) _TicketsCategory_createdAt(ctx context.Context, field graphql.CollectedField, obj *model.TicketsCategory) (ret graphql.Marshaler) {
+func (ec *executionContext) _TicketsCategory_createdAt(ctx context.Context, field graphql.CollectedField, obj *model1.TicketsCategory) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
 		ec.OperationContext,
@@ -872,7 +1173,7 @@ func (ec *executionContext) fieldContext_TicketsCategory_createdAt(_ context.Con
 	return fc, nil
 }
 
-func (ec *executionContext) _TicketsCategory_updatedAt(ctx context.Context, field graphql.CollectedField, obj *model.TicketsCategory) (ret graphql.Marshaler) {
+func (ec *executionContext) _TicketsCategory_updatedAt(ctx context.Context, field graphql.CollectedField, obj *model1.TicketsCategory) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
 		ec.OperationContext,
@@ -901,7 +1202,7 @@ func (ec *executionContext) fieldContext_TicketsCategory_updatedAt(_ context.Con
 	return fc, nil
 }
 
-func (ec *executionContext) _TicketsCategory_category(ctx context.Context, field graphql.CollectedField, obj *model.TicketsCategory) (ret graphql.Marshaler) {
+func (ec *executionContext) _TicketsCategory_category(ctx context.Context, field graphql.CollectedField, obj *model1.TicketsCategory) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
 		ec.OperationContext,
@@ -930,7 +1231,7 @@ func (ec *executionContext) fieldContext_TicketsCategory_category(_ context.Cont
 	return fc, nil
 }
 
-func (ec *executionContext) _TicketsCategory_price(ctx context.Context, field graphql.CollectedField, obj *model.TicketsCategory) (ret graphql.Marshaler) {
+func (ec *executionContext) _TicketsCategory_price(ctx context.Context, field graphql.CollectedField, obj *model1.TicketsCategory) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
 		ec.OperationContext,
@@ -959,7 +1260,7 @@ func (ec *executionContext) fieldContext_TicketsCategory_price(_ context.Context
 	return fc, nil
 }
 
-func (ec *executionContext) _TicketsCategory_quantity(ctx context.Context, field graphql.CollectedField, obj *model.TicketsCategory) (ret graphql.Marshaler) {
+func (ec *executionContext) _TicketsCategory_quantity(ctx context.Context, field graphql.CollectedField, obj *model1.TicketsCategory) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
 		ec.OperationContext,
@@ -988,7 +1289,7 @@ func (ec *executionContext) fieldContext_TicketsCategory_quantity(_ context.Cont
 	return fc, nil
 }
 
-func (ec *executionContext) _TicketsCategory_available(ctx context.Context, field graphql.CollectedField, obj *model.TicketsCategory) (ret graphql.Marshaler) {
+func (ec *executionContext) _TicketsCategory_available(ctx context.Context, field graphql.CollectedField, obj *model1.TicketsCategory) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
 		ec.OperationContext,
@@ -2463,6 +2764,53 @@ func (ec *executionContext) fieldContext___Type_isOneOf(_ context.Context, field
 
 // region    **************************** input.gotpl *****************************
 
+func (ec *executionContext) unmarshalInputCreateTicketsCategoryInput(ctx context.Context, obj any) (model.CreateTicketsCategoryInput, error) {
+	var it model.CreateTicketsCategoryInput
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"category", "price", "quantity", "available"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "category":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("category"))
+			data, err := ec.unmarshalNString2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Category = data
+		case "price":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("price"))
+			data, err := ec.unmarshalNFloat2float64(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Price = data
+		case "quantity":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("quantity"))
+			data, err := ec.unmarshalNInt2int(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Quantity = data
+		case "available":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("available"))
+			data, err := ec.unmarshalNInt2int(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Available = data
+		}
+	}
+	return it, nil
+}
+
 // endregion **************************** input.gotpl *****************************
 
 // region    ************************** interface.gotpl ***************************
@@ -2473,7 +2821,7 @@ func (ec *executionContext) fieldContext___Type_isOneOf(_ context.Context, field
 
 var eventImplementors = []string{"Event"}
 
-func (ec *executionContext) _Event(ctx context.Context, sel ast.SelectionSet, obj *model.Event) graphql.Marshaler {
+func (ec *executionContext) _Event(ctx context.Context, sel ast.SelectionSet, obj *model1.Event) graphql.Marshaler {
 	fields := graphql.CollectFields(ec.OperationContext, sel, eventImplementors)
 
 	out := graphql.NewFieldSet(fields)
@@ -2519,6 +2867,69 @@ func (ec *executionContext) _Event(ctx context.Context, sel ast.SelectionSet, ob
 			}
 		case "tickets":
 			out.Values[i] = ec._Event_tickets(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var mutationImplementors = []string{"Mutation"}
+
+func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, mutationImplementors)
+	ctx = graphql.WithFieldContext(ctx, &graphql.FieldContext{
+		Object: "Mutation",
+	})
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		innerCtx := graphql.WithRootFieldContext(ctx, &graphql.RootFieldContext{
+			Object: field.Name,
+			Field:  field,
+		})
+
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("Mutation")
+		case "createEvent":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_createEvent(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "updateEvent":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_updateEvent(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "deleteEvent":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_deleteEvent(ctx, field)
+			})
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -2638,7 +3049,7 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 
 var ticketsCategoryImplementors = []string{"TicketsCategory"}
 
-func (ec *executionContext) _TicketsCategory(ctx context.Context, sel ast.SelectionSet, obj *model.TicketsCategory) graphql.Marshaler {
+func (ec *executionContext) _TicketsCategory(ctx context.Context, sel ast.SelectionSet, obj *model1.TicketsCategory) graphql.Marshaler {
 	fields := graphql.CollectFields(ec.OperationContext, sel, ticketsCategoryImplementors)
 
 	out := graphql.NewFieldSet(fields)
@@ -3056,7 +3467,31 @@ func (ec *executionContext) marshalNBoolean2bool(ctx context.Context, sel ast.Se
 	return res
 }
 
-func (ec *executionContext) marshalNEvent2ᚕᚖrocketᚑticketsᚋmodelᚐEventᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.Event) graphql.Marshaler {
+func (ec *executionContext) unmarshalNCreateTicketsCategoryInput2ᚕᚖrocketᚑticketsᚋgraphᚋmodelᚐCreateTicketsCategoryInputᚄ(ctx context.Context, v any) ([]*model.CreateTicketsCategoryInput, error) {
+	var vSlice []any
+	vSlice = graphql.CoerceList(v)
+	var err error
+	res := make([]*model.CreateTicketsCategoryInput, len(vSlice))
+	for i := range vSlice {
+		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithIndex(i))
+		res[i], err = ec.unmarshalNCreateTicketsCategoryInput2ᚖrocketᚑticketsᚋgraphᚋmodelᚐCreateTicketsCategoryInput(ctx, vSlice[i])
+		if err != nil {
+			return nil, err
+		}
+	}
+	return res, nil
+}
+
+func (ec *executionContext) unmarshalNCreateTicketsCategoryInput2ᚖrocketᚑticketsᚋgraphᚋmodelᚐCreateTicketsCategoryInput(ctx context.Context, v any) (*model.CreateTicketsCategoryInput, error) {
+	res, err := ec.unmarshalInputCreateTicketsCategoryInput(ctx, v)
+	return &res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNEvent2rocketᚑticketsᚋmodelᚐEvent(ctx context.Context, sel ast.SelectionSet, v model1.Event) graphql.Marshaler {
+	return ec._Event(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNEvent2ᚕᚖrocketᚑticketsᚋmodelᚐEventᚄ(ctx context.Context, sel ast.SelectionSet, v []*model1.Event) graphql.Marshaler {
 	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
 		fc := graphql.GetFieldContext(ctx)
 		fc.Result = &v[i]
@@ -3072,7 +3507,7 @@ func (ec *executionContext) marshalNEvent2ᚕᚖrocketᚑticketsᚋmodelᚐEvent
 	return ret
 }
 
-func (ec *executionContext) marshalNEvent2ᚖrocketᚑticketsᚋmodelᚐEvent(ctx context.Context, sel ast.SelectionSet, v *model.Event) graphql.Marshaler {
+func (ec *executionContext) marshalNEvent2ᚖrocketᚑticketsᚋmodelᚐEvent(ctx context.Context, sel ast.SelectionSet, v *model1.Event) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
 			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
@@ -3130,11 +3565,11 @@ func (ec *executionContext) marshalNString2string(ctx context.Context, sel ast.S
 	return res
 }
 
-func (ec *executionContext) marshalNTicketsCategory2rocketᚑticketsᚋmodelᚐTicketsCategory(ctx context.Context, sel ast.SelectionSet, v model.TicketsCategory) graphql.Marshaler {
+func (ec *executionContext) marshalNTicketsCategory2rocketᚑticketsᚋmodelᚐTicketsCategory(ctx context.Context, sel ast.SelectionSet, v model1.TicketsCategory) graphql.Marshaler {
 	return ec._TicketsCategory(ctx, sel, &v)
 }
 
-func (ec *executionContext) marshalNTicketsCategory2ᚕrocketᚑticketsᚋmodelᚐTicketsCategoryᚄ(ctx context.Context, sel ast.SelectionSet, v []model.TicketsCategory) graphql.Marshaler {
+func (ec *executionContext) marshalNTicketsCategory2ᚕrocketᚑticketsᚋmodelᚐTicketsCategoryᚄ(ctx context.Context, sel ast.SelectionSet, v []model1.TicketsCategory) graphql.Marshaler {
 	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
 		fc := graphql.GetFieldContext(ctx)
 		fc.Result = &v[i]
@@ -3150,7 +3585,7 @@ func (ec *executionContext) marshalNTicketsCategory2ᚕrocketᚑticketsᚋmodel�
 	return ret
 }
 
-func (ec *executionContext) marshalNTicketsCategory2ᚖᚕrocketᚑticketsᚋmodelᚐTicketsCategoryᚄ(ctx context.Context, sel ast.SelectionSet, v *[]model.TicketsCategory) graphql.Marshaler {
+func (ec *executionContext) marshalNTicketsCategory2ᚖᚕrocketᚑticketsᚋmodelᚐTicketsCategoryᚄ(ctx context.Context, sel ast.SelectionSet, v *[]model1.TicketsCategory) graphql.Marshaler {
 	return ec.marshalNTicketsCategory2ᚕrocketᚑticketsᚋmodelᚐTicketsCategoryᚄ(ctx, sel, *v)
 }
 
@@ -3357,7 +3792,25 @@ func (ec *executionContext) marshalOBoolean2ᚖbool(ctx context.Context, sel ast
 	return res
 }
 
-func (ec *executionContext) marshalOEvent2ᚖrocketᚑticketsᚋmodelᚐEvent(ctx context.Context, sel ast.SelectionSet, v *model.Event) graphql.Marshaler {
+func (ec *executionContext) unmarshalOCreateTicketsCategoryInput2ᚕᚖrocketᚑticketsᚋgraphᚋmodelᚐCreateTicketsCategoryInputᚄ(ctx context.Context, v any) ([]*model.CreateTicketsCategoryInput, error) {
+	if v == nil {
+		return nil, nil
+	}
+	var vSlice []any
+	vSlice = graphql.CoerceList(v)
+	var err error
+	res := make([]*model.CreateTicketsCategoryInput, len(vSlice))
+	for i := range vSlice {
+		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithIndex(i))
+		res[i], err = ec.unmarshalNCreateTicketsCategoryInput2ᚖrocketᚑticketsᚋgraphᚋmodelᚐCreateTicketsCategoryInput(ctx, vSlice[i])
+		if err != nil {
+			return nil, err
+		}
+	}
+	return res, nil
+}
+
+func (ec *executionContext) marshalOEvent2ᚖrocketᚑticketsᚋmodelᚐEvent(ctx context.Context, sel ast.SelectionSet, v *model1.Event) graphql.Marshaler {
 	if v == nil {
 		return graphql.Null
 	}

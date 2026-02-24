@@ -7,9 +7,91 @@ package graph
 
 import (
 	"context"
+	model1 "rocket-tickets/graph/model"
 	"rocket-tickets/model"
 	"rocket-tickets/repository"
+	"time"
+
+	"github.com/gin-gonic/gin/binding"
 )
+
+// CreateEvent is the resolver for the createEvent field.
+func (r *mutationResolver) CreateEvent(ctx context.Context, title string, date time.Time, venue string, artist string, tickets []*model1.CreateTicketsCategoryInput) (*model.Event, error) {
+	var event model.Event
+	event.Title = title
+	event.Date = date
+	event.Venue = venue
+	event.Artist = artist
+
+	if tickets != nil {
+		categories := make([]model.TicketsCategory, 0, len(tickets))
+		for _, t := range tickets {
+			categories = append(categories, model.TicketsCategory{
+				Category:  t.Category,
+				Price:     t.Price,
+				Quantity:  t.Quantity,
+				Available: t.Available,
+			})
+		}
+		event.Tickets = &categories
+	}
+	if err := validateEventPayload(&event); err != nil {
+		return nil, err
+	}
+
+	err := r.EventStore.AddEvent(&event)
+	if err != nil {
+		return nil, err
+	}
+
+	return &event, nil
+}
+
+// UpdateEvent is the resolver for the updateEvent field.
+func (r *mutationResolver) UpdateEvent(ctx context.Context, id uint, title string, date time.Time, venue string, artist string, tickets []*model1.CreateTicketsCategoryInput) (*model.Event, error) {
+	var event model.Event
+	event.ID = id
+	event.Title = title
+	event.Date = date
+	event.Venue = venue
+	event.Artist = artist
+
+	if tickets != nil {
+		categories := make([]model.TicketsCategory, 0, len(tickets))
+		for _, t := range tickets {
+			categories = append(categories, model.TicketsCategory{
+				Category:  t.Category,
+				Price:     t.Price,
+				Quantity:  t.Quantity,
+				Available: t.Available,
+			})
+		}
+		event.Tickets = &categories
+	}
+	if event.Tickets == nil {
+		event.Tickets = &[]model.TicketsCategory{}
+	}
+	if err := validateEventPayload(&event); err != nil {
+		return nil, err
+	}
+
+	err := r.EventStore.UpdateEvent(id, &event)
+	if err != nil {
+		return nil, err
+	}
+
+	return &event, nil
+}
+
+// DeleteEvent is the resolver for the deleteEvent field.
+func (r *mutationResolver) DeleteEvent(ctx context.Context, id uint) (bool, error) {
+	err := r.EventStore.DeleteEvent(id)
+	if err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
 
 // Events is the resolver for the events field.
 func (r *queryResolver) Events(ctx context.Context) ([]*model.Event, error) {
@@ -39,7 +121,15 @@ func (r *queryResolver) Event(ctx context.Context, id uint) (*model.Event, error
 	return &event, nil
 }
 
+// Mutation returns MutationResolver implementation.
+func (r *Resolver) Mutation() MutationResolver { return &mutationResolver{r} }
+
 // Query returns QueryResolver implementation.
 func (r *Resolver) Query() QueryResolver { return &queryResolver{r} }
 
+type mutationResolver struct{ *Resolver }
 type queryResolver struct{ *Resolver }
+
+func validateEventPayload(event *model.Event) error {
+	return binding.Validator.ValidateStruct(event)
+}

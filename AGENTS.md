@@ -44,6 +44,9 @@
 - Event updates:
   - `PUT /event/:id` uses replacement semantics for categories.
   - If `tickets` is omitted, it is treated as empty list.
+- GraphQL event mutations:
+  - `createEvent` and `updateEvent` must enforce the same model validation constraints used by REST (`binding` tags on `model.Event` and nested `TicketsCategory`).
+  - `updateEvent` uses replacement semantics for fields and categories (required scalar fields), and omitted `tickets` is treated as empty list.
 
 ## File Map
 - Entry point and routes: `main.go`
