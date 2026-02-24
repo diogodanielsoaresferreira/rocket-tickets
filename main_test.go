@@ -1083,3 +1083,343 @@ func TestGraphQLUpdateEventMutationRejectsInvalidAvailability(t *testing.T) {
 		t.Fatalf("expected updateEvent result to be nil on validation error")
 	}
 }
+
+func TestGraphQLPurchaseTicketMutationCreatesTicketAndDecrementsAvailability(t *testing.T) {
+	r := setupGraphQLTestRouter(t)
+	eventID, categoryID := createEventWithSingleCategory(t, r, 2)
+
+	graphQLPayload := map[string]any{
+		"query": `
+			mutation PurchaseTicket($eventId: UInt!, $categoryId: UInt!) {
+				purchaseTicket(eventId: $eventId, categoryId: $categoryId) {
+					id
+					status
+				}
+			}
+		`,
+		"variables": map[string]any{
+			"eventId":    eventID,
+			"categoryId": categoryID,
+		},
+	}
+
+	graphQLBody, err := json.Marshal(graphQLPayload)
+	if err != nil {
+		t.Fatalf("failed to marshal graphql payload: %v", err)
+	}
+
+	resp := performRequest(r, http.MethodPost, "/query", graphQLBody)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d (body: %s)", http.StatusOK, resp.Code, resp.Body.String())
+	}
+
+	var graphQLResp struct {
+		Data struct {
+			PurchaseTicket struct {
+				ID     uint   `json:"id"`
+				Status string `json:"status"`
+			} `json:"purchaseTicket"`
+		} `json:"data"`
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+
+	if err := json.Unmarshal(resp.Body.Bytes(), &graphQLResp); err != nil {
+		t.Fatalf("failed to decode graphql response: %v", err)
+	}
+
+	if len(graphQLResp.Errors) != 0 {
+		t.Fatalf("expected no graphql errors, got %+v", graphQLResp.Errors)
+	}
+	if graphQLResp.Data.PurchaseTicket.ID == 0 {
+		t.Fatalf("expected purchased ticket ID to be populated")
+	}
+	if graphQLResp.Data.PurchaseTicket.Status != "sold" {
+		t.Fatalf("expected purchased ticket status sold, got %q", graphQLResp.Data.PurchaseTicket.Status)
+	}
+
+	event := getEventByID(t, r, eventID)
+	if event.Tickets == nil || len(*event.Tickets) != 1 {
+		t.Fatalf("expected one ticket category, got %+v", event.Tickets)
+	}
+	if (*event.Tickets)[0].Available != 1 {
+		t.Fatalf("expected available to decrease to 1, got %d", (*event.Tickets)[0].Available)
+	}
+}
+
+func TestGraphQLPurchaseTicketMutationReturnsErrorWhenSoldOut(t *testing.T) {
+	r := setupGraphQLTestRouter(t)
+	eventID, categoryID := createEventWithSingleCategory(t, r, 0)
+
+	graphQLPayload := map[string]any{
+		"query": `
+			mutation PurchaseTicket($eventId: UInt!, $categoryId: UInt!) {
+				purchaseTicket(eventId: $eventId, categoryId: $categoryId) {
+					id
+				}
+			}
+		`,
+		"variables": map[string]any{
+			"eventId":    eventID,
+			"categoryId": categoryID,
+		},
+	}
+
+	graphQLBody, err := json.Marshal(graphQLPayload)
+	if err != nil {
+		t.Fatalf("failed to marshal graphql payload: %v", err)
+	}
+
+	resp := performRequest(r, http.MethodPost, "/query", graphQLBody)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d (body: %s)", http.StatusOK, resp.Code, resp.Body.String())
+	}
+
+	var graphQLResp struct {
+		Data struct {
+			PurchaseTicket *struct {
+				ID uint `json:"id"`
+			} `json:"purchaseTicket"`
+		} `json:"data"`
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+
+	if err := json.Unmarshal(resp.Body.Bytes(), &graphQLResp); err != nil {
+		t.Fatalf("failed to decode graphql response: %v", err)
+	}
+
+	if len(graphQLResp.Errors) == 0 {
+		t.Fatalf("expected graphql error for sold out category, got none")
+	}
+}
+
+func TestGraphQLCancelTicketMutationReturnsTrueAndIncrementsAvailability(t *testing.T) {
+	r := setupGraphQLTestRouter(t)
+	eventID, categoryID := createEventWithSingleCategory(t, r, 1)
+
+	createPath := "/event/" + strconv.FormatUint(uint64(eventID), 10) + "/category/" + strconv.FormatUint(uint64(categoryID), 10)
+	createResp := performRequest(r, http.MethodPost, createPath, nil)
+	if createResp.Code != http.StatusCreated {
+		t.Fatalf("expected status %d, got %d (body: %s)", http.StatusCreated, createResp.Code, createResp.Body.String())
+	}
+
+	var createdTicket model.Ticket
+	if err := json.Unmarshal(createResp.Body.Bytes(), &createdTicket); err != nil {
+		t.Fatalf("failed to decode create ticket response: %v", err)
+	}
+
+	graphQLPayload := map[string]any{
+		"query": `
+			mutation CancelTicket($ticketId: UInt!) {
+				cancelTicket(ticketId: $ticketId)
+			}
+		`,
+		"variables": map[string]any{
+			"ticketId": createdTicket.ID,
+		},
+	}
+
+	graphQLBody, err := json.Marshal(graphQLPayload)
+	if err != nil {
+		t.Fatalf("failed to marshal graphql payload: %v", err)
+	}
+
+	resp := performRequest(r, http.MethodPost, "/query", graphQLBody)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d (body: %s)", http.StatusOK, resp.Code, resp.Body.String())
+	}
+
+	var graphQLResp struct {
+		Data struct {
+			CancelTicket bool `json:"cancelTicket"`
+		} `json:"data"`
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+
+	if err := json.Unmarshal(resp.Body.Bytes(), &graphQLResp); err != nil {
+		t.Fatalf("failed to decode graphql response: %v", err)
+	}
+
+	if len(graphQLResp.Errors) != 0 {
+		t.Fatalf("expected no graphql errors, got %+v", graphQLResp.Errors)
+	}
+	if !graphQLResp.Data.CancelTicket {
+		t.Fatalf("expected cancelTicket to return true")
+	}
+
+	event := getEventByID(t, r, eventID)
+	if event.Tickets == nil || len(*event.Tickets) != 1 {
+		t.Fatalf("expected one ticket category, got %+v", event.Tickets)
+	}
+	if (*event.Tickets)[0].Available != 1 {
+		t.Fatalf("expected available to increase to 1 after cancel, got %d", (*event.Tickets)[0].Available)
+	}
+}
+
+func TestGraphQLCancelTicketMutationReturnsFalseWhenTicketDoesNotExist(t *testing.T) {
+	r := setupGraphQLTestRouter(t)
+
+	graphQLPayload := map[string]any{
+		"query": `
+			mutation CancelTicket($ticketId: UInt!) {
+				cancelTicket(ticketId: $ticketId)
+			}
+		`,
+		"variables": map[string]any{
+			"ticketId": uint(999999),
+		},
+	}
+
+	graphQLBody, err := json.Marshal(graphQLPayload)
+	if err != nil {
+		t.Fatalf("failed to marshal graphql payload: %v", err)
+	}
+
+	resp := performRequest(r, http.MethodPost, "/query", graphQLBody)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d (body: %s)", http.StatusOK, resp.Code, resp.Body.String())
+	}
+
+	var graphQLResp struct {
+		Data struct {
+			CancelTicket bool `json:"cancelTicket"`
+		} `json:"data"`
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+
+	if err := json.Unmarshal(resp.Body.Bytes(), &graphQLResp); err != nil {
+		t.Fatalf("failed to decode graphql response: %v", err)
+	}
+
+	if len(graphQLResp.Errors) != 0 {
+		t.Fatalf("expected no graphql errors, got %+v", graphQLResp.Errors)
+	}
+	if graphQLResp.Data.CancelTicket {
+		t.Fatalf("expected cancelTicket to return false for missing ticket")
+	}
+}
+
+func TestGraphQLTicketQueryReturnsTicketByID(t *testing.T) {
+	r := setupGraphQLTestRouter(t)
+	eventID, categoryID := createEventWithSingleCategory(t, r, 1)
+
+	createPath := "/event/" + strconv.FormatUint(uint64(eventID), 10) + "/category/" + strconv.FormatUint(uint64(categoryID), 10)
+	createResp := performRequest(r, http.MethodPost, createPath, nil)
+	if createResp.Code != http.StatusCreated {
+		t.Fatalf("expected status %d, got %d (body: %s)", http.StatusCreated, createResp.Code, createResp.Body.String())
+	}
+
+	var createdTicket model.Ticket
+	if err := json.Unmarshal(createResp.Body.Bytes(), &createdTicket); err != nil {
+		t.Fatalf("failed to decode create ticket response: %v", err)
+	}
+
+	graphQLPayload := map[string]any{
+		"query": `
+			query TicketByID($id: UInt!) {
+				ticket(id: $id) {
+					id
+					status
+				}
+			}
+		`,
+		"variables": map[string]any{
+			"id": createdTicket.ID,
+		},
+	}
+
+	graphQLBody, err := json.Marshal(graphQLPayload)
+	if err != nil {
+		t.Fatalf("failed to marshal graphql payload: %v", err)
+	}
+
+	resp := performRequest(r, http.MethodPost, "/query", graphQLBody)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d (body: %s)", http.StatusOK, resp.Code, resp.Body.String())
+	}
+
+	var graphQLResp struct {
+		Data struct {
+			Ticket *struct {
+				ID     uint   `json:"id"`
+				Status string `json:"status"`
+			} `json:"ticket"`
+		} `json:"data"`
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+
+	if err := json.Unmarshal(resp.Body.Bytes(), &graphQLResp); err != nil {
+		t.Fatalf("failed to decode graphql response: %v", err)
+	}
+
+	if len(graphQLResp.Errors) != 0 {
+		t.Fatalf("expected no graphql errors, got %+v", graphQLResp.Errors)
+	}
+	if graphQLResp.Data.Ticket == nil {
+		t.Fatalf("expected ticket in graphql response, got nil")
+	}
+	if graphQLResp.Data.Ticket.ID != createdTicket.ID {
+		t.Fatalf("expected ticket ID %d, got %d", createdTicket.ID, graphQLResp.Data.Ticket.ID)
+	}
+	if graphQLResp.Data.Ticket.Status != "sold" {
+		t.Fatalf("expected ticket status sold, got %q", graphQLResp.Data.Ticket.Status)
+	}
+}
+
+func TestGraphQLTicketQueryReturnsNullWhenTicketDoesNotExist(t *testing.T) {
+	r := setupGraphQLTestRouter(t)
+
+	graphQLPayload := map[string]any{
+		"query": `
+			query TicketByID($id: UInt!) {
+				ticket(id: $id) {
+					id
+				}
+			}
+		`,
+		"variables": map[string]any{
+			"id": uint(999999),
+		},
+	}
+
+	graphQLBody, err := json.Marshal(graphQLPayload)
+	if err != nil {
+		t.Fatalf("failed to marshal graphql payload: %v", err)
+	}
+
+	resp := performRequest(r, http.MethodPost, "/query", graphQLBody)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d (body: %s)", http.StatusOK, resp.Code, resp.Body.String())
+	}
+
+	var graphQLResp struct {
+		Data struct {
+			Ticket *struct {
+				ID uint `json:"id"`
+			} `json:"ticket"`
+		} `json:"data"`
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+
+	if err := json.Unmarshal(resp.Body.Bytes(), &graphQLResp); err != nil {
+		t.Fatalf("failed to decode graphql response: %v", err)
+	}
+
+	if len(graphQLResp.Errors) != 0 {
+		t.Fatalf("expected no graphql errors, got %+v", graphQLResp.Errors)
+	}
+	if graphQLResp.Data.Ticket != nil {
+		t.Fatalf("expected null ticket for missing ID")
+	}
+}

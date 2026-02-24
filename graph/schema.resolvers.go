@@ -11,8 +11,6 @@ import (
 	"rocket-tickets/model"
 	"rocket-tickets/repository"
 	"time"
-
-	"github.com/gin-gonic/gin/binding"
 )
 
 // CreateEvent is the resolver for the createEvent field.
@@ -87,10 +85,37 @@ func (r *mutationResolver) UpdateEvent(ctx context.Context, id uint, title strin
 func (r *mutationResolver) DeleteEvent(ctx context.Context, id uint) (bool, error) {
 	err := r.EventStore.DeleteEvent(id)
 	if err != nil {
+		if err == repository.ErrEventNotFound {
+			return false, nil
+		}
 		return false, err
 	}
 
 	return true, nil
+}
+
+// PurchaseTicket is the resolver for the purchaseTicket field.
+func (r *mutationResolver) PurchaseTicket(ctx context.Context, eventID uint, categoryID uint) (*model.Ticket, error) {
+	ticket, err := r.EventStore.CreateTicket(eventID, categoryID)
+	if err != nil {
+		return nil, err
+	}
+	return &ticket, nil
+}
+
+// CancelTicket is the resolver for the cancelTicket field.
+func (r *mutationResolver) CancelTicket(ctx context.Context, ticketID uint) (bool, error) {
+	err := r.EventStore.CancelTicket(ticketID)
+	if err != nil {
+		if err == repository.ErrTicketNotFound {
+			return false, nil
+		}
+		if err == repository.ErrTicketAlreadyCancelled {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, err
 }
 
 // Events is the resolver for the events field.
@@ -121,6 +146,19 @@ func (r *queryResolver) Event(ctx context.Context, id uint) (*model.Event, error
 	return &event, nil
 }
 
+// Ticket is the resolver for the ticket field.
+func (r *queryResolver) Ticket(ctx context.Context, id uint) (*model.Ticket, error) {
+	ticket, err := r.EventStore.GetTicket(id)
+	if err != nil {
+		if err == repository.ErrTicketNotFound {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	return &ticket, nil
+}
+
 // Mutation returns MutationResolver implementation.
 func (r *Resolver) Mutation() MutationResolver { return &mutationResolver{r} }
 
@@ -129,7 +167,3 @@ func (r *Resolver) Query() QueryResolver { return &queryResolver{r} }
 
 type mutationResolver struct{ *Resolver }
 type queryResolver struct{ *Resolver }
-
-func validateEventPayload(event *model.Event) error {
-	return binding.Validator.ValidateStruct(event)
-}

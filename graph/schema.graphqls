@@ -4,7 +4,38 @@ scalar UInt
 type Query {
   events: [Event!]!
   event(id: UInt!): Event
+
+  ticket(id: UInt!): Ticket
 }
+
+type Mutation {
+  createEvent(
+    title: String!
+    date: Time!
+    venue: String!
+    artist: String!
+    tickets: [CreateTicketsCategoryInput!]!
+  ): Event!
+  
+  updateEvent(
+    id: UInt!
+    title: String!
+    date: Time!
+    venue: String!
+    artist: String!
+    tickets: [CreateTicketsCategoryInput!]
+  ): Event!
+
+  deleteEvent(id: UInt!): Boolean!
+
+  purchaseTicket(
+    eventId: UInt!
+    categoryId: UInt!
+  ): Ticket!
+
+  cancelTicket(ticketId: UInt!): Boolean!
+}
+
 
 type Event {
   id: UInt!
@@ -27,30 +58,15 @@ type TicketsCategory {
   available: Int!
 }
 
+type Ticket {
+  id: UInt!
+  status: String!
+  soldAt: Time!
+}
+
 input CreateTicketsCategoryInput {
   category: String!
   price: Float!
   quantity: Int!
   available: Int!
-}
-
-type Mutation {
-  createEvent(
-    title: String!
-    date: Time!
-    venue: String!
-    artist: String!
-    tickets: [CreateTicketsCategoryInput!]!
-  ): Event!
-  
-  updateEvent(
-    id: UInt!
-    title: String!
-    date: Time!
-    venue: String!
-    artist: String!
-    tickets: [CreateTicketsCategoryInput!]
-  ): Event!
-
-  deleteEvent(id: UInt!): Boolean!
 }
